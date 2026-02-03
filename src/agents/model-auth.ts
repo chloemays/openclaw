@@ -284,6 +284,14 @@ export function resolveEnvApiKey(provider: string): EnvApiKeyResult | null {
     return pick("KIMI_API_KEY") ?? pick("KIMICODE_API_KEY");
   }
 
+  if (normalized === "google-antigravity") {
+    return pick("GOOGLE_ANTIGRAVITY_OAUTH_TOKEN") ?? pick("ANTIGRAVITY_OAUTH_TOKEN");
+  }
+
+  if (normalized === "google-gemini-cli") {
+    return pick("GOOGLE_GEMINI_CLI_OAUTH_TOKEN") ?? pick("GEMINI_CLI_OAUTH_TOKEN");
+  }
+
   const envMap: Record<string, string> = {
     openai: "OPENAI_API_KEY",
     google: "GEMINI_API_KEY",
