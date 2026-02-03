@@ -48,6 +48,31 @@ function shouldAcceptInbound(
   }
 }
 
+/**
+ * Reject an inbound call by hanging it up at the provider level.
+ * This is used for calls that don't pass the allowlist check.
+ */
+async function rejectInboundCall(ctx: CallManagerContext, providerCallId: string): Promise<void> {
+  if (!ctx.provider) {
+    console.log("[voice-call] Cannot reject call: provider not initialized");
+    return;
+  }
+
+  try {
+    await ctx.provider.hangupCall({
+      callId: providerCallId, // Use providerCallId as callId since we don't have an internal record
+      providerCallId,
+      reason: "rejected",
+    });
+    console.log(`[voice-call] Rejected inbound call: ${providerCallId}`);
+  } catch (err) {
+    console.warn(
+      `[voice-call] Failed to reject inbound call ${providerCallId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 function createInboundCall(params: {
   ctx: CallManagerContext;
   providerCallId: string;
@@ -94,7 +119,8 @@ export function processEvent(ctx: CallManagerContext, event: NormalizedEvent): v
 
   if (!call && event.direction === "inbound" && event.providerCallId) {
     if (!shouldAcceptInbound(ctx.config, event.from)) {
-      // TODO: Could hang up the call here.
+      // Actively hang up the rejected call at the provider level
+      void rejectInboundCall(ctx, event.providerCallId);
       return;
     }
 
