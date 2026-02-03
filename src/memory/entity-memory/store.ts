@@ -407,68 +407,69 @@ export class EntityMemoryStore {
     const now = Date.now();
 
     // Build WHERE clause
+    // Use "e." prefix for entity table columns to avoid ambiguity in FTS join queries
     const conditions: string[] = [];
     const params: unknown[] = [];
 
     // Agent ID filter (own + shared)
     if (query.includeShared !== false) {
-      conditions.push("(agent_id = ? OR shared = 1)");
+      conditions.push("(e.agent_id = ? OR e.shared = 1)");
       params.push(query.agentId ?? this.agentId);
     } else {
-      conditions.push("agent_id = ?");
+      conditions.push("e.agent_id = ?");
       params.push(query.agentId ?? this.agentId);
     }
 
     // Type filter
     if (query.types && query.types.length > 0) {
-      conditions.push(`type IN (${query.types.map(() => "?").join(", ")})`);
+      conditions.push(`e.type IN (${query.types.map(() => "?").join(", ")})`);
       params.push(...query.types);
     }
 
     // Importance filter
     if (query.importance && query.importance.length > 0) {
-      conditions.push(`importance IN (${query.importance.map(() => "?").join(", ")})`);
+      conditions.push(`e.importance IN (${query.importance.map(() => "?").join(", ")})`);
       params.push(...query.importance);
     }
 
     // Time range filter
     if (query.timeRange?.from) {
-      conditions.push("created_at >= ?");
+      conditions.push("e.created_at >= ?");
       params.push(query.timeRange.from);
     }
     if (query.timeRange?.to) {
-      conditions.push("created_at <= ?");
+      conditions.push("e.created_at <= ?");
       params.push(query.timeRange.to);
     }
 
     // Temporal relevance filter
     if (query.relevantAt) {
       conditions.push(
-        "(relevant_from IS NULL OR relevant_from <= ?) AND (relevant_until IS NULL OR relevant_until >= ?)",
+        "(e.relevant_from IS NULL OR e.relevant_from <= ?) AND (e.relevant_until IS NULL OR e.relevant_until >= ?)",
       );
       params.push(query.relevantAt, query.relevantAt);
     }
 
     // Source filter
     if (query.sourceType) {
-      conditions.push("source_type = ?");
+      conditions.push("e.source_type = ?");
       params.push(query.sourceType);
     }
     if (query.sessionKey) {
-      conditions.push("source_session_key = ?");
+      conditions.push("e.source_session_key = ?");
       params.push(query.sessionKey);
     }
 
     // Confidence filter
     if (query.minConfidence) {
-      conditions.push("confidence >= ?");
+      conditions.push("e.confidence >= ?");
       params.push(query.minConfidence);
     }
 
     // Tags filter (using JSON contains)
     if (query.tags && query.tags.length > 0) {
       for (const tag of query.tags) {
-        conditions.push("tags LIKE ?");
+        conditions.push("e.tags LIKE ?");
         params.push(`%"${tag}"%`);
       }
     }
@@ -524,14 +525,14 @@ export class EntityMemoryStore {
       } else {
         rows = this.db
           .prepare(
-            `SELECT * FROM ${ENTITY_TABLE} ${whereClause} ORDER BY ${orderBy} ${direction} LIMIT ? OFFSET ?`,
+            `SELECT e.* FROM ${ENTITY_TABLE} e ${whereClause} ORDER BY e.${orderBy} ${direction} LIMIT ? OFFSET ?`,
           )
           .all(...params, limit, offset) as EntityRow[];
       }
     } else {
       rows = this.db
         .prepare(
-          `SELECT * FROM ${ENTITY_TABLE} ${whereClause} ORDER BY ${orderBy} ${direction} LIMIT ? OFFSET ?`,
+          `SELECT e.* FROM ${ENTITY_TABLE} e ${whereClause} ORDER BY e.${orderBy} ${direction} LIMIT ? OFFSET ?`,
         )
         .all(...params, limit, offset) as EntityRow[];
     }
@@ -683,6 +684,176 @@ export class EntityMemoryStore {
   releaseLock(lockId: string): boolean {
     const result = this.db.prepare(`DELETE FROM ${LOCKS_TABLE} WHERE lock_id = ?`).run(lockId);
     return result.changes > 0;
+  }
+
+  /**
+   * Find memories that need decay factor updates
+   */
+  findMemoriesForDecay(params: {
+    minDecayFactor: number;
+    limit: number;
+  }): Promise<Array<{ id: string; createdAt: number; decayFactor: number }>> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, created_at, decay_factor FROM ${ENTITY_TABLE}
+         WHERE agent_id = ? AND decay_factor > ?
+         ORDER BY decay_factor DESC
+         LIMIT ?`,
+      )
+      .all(this.agentId, params.minDecayFactor, params.limit) as Array<{
+      id: string;
+      created_at: number;
+      decay_factor: number;
+    }>;
+
+    return Promise.resolve(
+      rows.map((row) => ({
+        id: row.id,
+        createdAt: row.created_at,
+        decayFactor: row.decay_factor,
+      })),
+    );
+  }
+
+  /**
+   * Update a memory's decay factor
+   */
+  updateDecayFactor(id: string, decayFactor: number): Promise<void> {
+    this.db
+      .prepare(`UPDATE ${ENTITY_TABLE} SET decay_factor = ? WHERE id = ?`)
+      .run(decayFactor, id);
+    return Promise.resolve();
+  }
+
+  /**
+   * Find groups of potentially duplicate memories based on content hash prefix
+   */
+  findDuplicateCandidates(params: { limit: number }): Promise<
+    Array<{
+      hashPrefix: string;
+      memories: Array<{
+        id: string;
+        importance: ImportanceLevel;
+        confidence: number;
+        updatedAt: number;
+        tags: string[];
+        attributes: Record<string, unknown>;
+      }>;
+    }>
+  > {
+    // Find content hash prefixes that have multiple entries
+    const groups = this.db
+      .prepare(
+        `SELECT SUBSTR(content_hash, 1, 8) as hash_prefix, COUNT(*) as cnt
+         FROM ${ENTITY_TABLE}
+         WHERE agent_id = ?
+         GROUP BY SUBSTR(content_hash, 1, 8)
+         HAVING cnt > 1
+         LIMIT ?`,
+      )
+      .all(this.agentId, params.limit) as Array<{ hash_prefix: string; cnt: number }>;
+
+    const result: Array<{
+      hashPrefix: string;
+      memories: Array<{
+        id: string;
+        importance: ImportanceLevel;
+        confidence: number;
+        updatedAt: number;
+        tags: string[];
+        attributes: Record<string, unknown>;
+      }>;
+    }> = [];
+
+    for (const group of groups) {
+      const memories = this.db
+        .prepare(
+          `SELECT id, importance, confidence, updated_at, tags, attributes
+           FROM ${ENTITY_TABLE}
+           WHERE agent_id = ? AND SUBSTR(content_hash, 1, 8) = ?`,
+        )
+        .all(this.agentId, group.hash_prefix) as Array<{
+        id: string;
+        importance: string;
+        confidence: number;
+        updated_at: number;
+        tags: string;
+        attributes: string;
+      }>;
+
+      result.push({
+        hashPrefix: group.hash_prefix,
+        memories: memories.map((m) => ({
+          id: m.id,
+          importance: m.importance as ImportanceLevel,
+          confidence: m.confidence,
+          updatedAt: m.updated_at,
+          tags: JSON.parse(m.tags || "[]"),
+          attributes: JSON.parse(m.attributes || "{}"),
+        })),
+      });
+    }
+
+    return Promise.resolve(result);
+  }
+
+  /**
+   * Find memories that meet archive criteria
+   */
+  findArchiveCandidates(params: {
+    maxImportance: ImportanceLevel[];
+    createdBefore: number;
+    lastAccessedBefore: number;
+    maxDecayFactor: number;
+    limit: number;
+  }): Promise<Array<{ id: string }>> {
+    const importancePlaceholders = params.maxImportance.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(
+        `SELECT id FROM ${ENTITY_TABLE}
+         WHERE agent_id = ?
+           AND importance IN (${importancePlaceholders})
+           AND created_at < ?
+           AND last_accessed_at < ?
+           AND decay_factor <= ?
+         ORDER BY last_accessed_at ASC
+         LIMIT ?`,
+      )
+      .all(
+        this.agentId,
+        ...params.maxImportance,
+        params.createdBefore,
+        params.lastAccessedBefore,
+        params.maxDecayFactor,
+        params.limit,
+      ) as Array<{ id: string }>;
+
+    return Promise.resolve(rows);
+  }
+
+  /**
+   * Log a consolidation action for audit purposes
+   */
+  logConsolidationAction(params: {
+    entityId: string;
+    action: string;
+    reason: string;
+    timestamp: number;
+  }): Promise<void> {
+    // Log to access log with a special access_type
+    this.db
+      .prepare(
+        `INSERT INTO ${ACCESS_LOG_TABLE} (entity_id, agent_id, access_type, accessed_at, query_context)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        params.entityId,
+        this.agentId,
+        `consolidation:${params.action}`,
+        params.timestamp,
+        params.reason,
+      );
+    return Promise.resolve();
   }
 
   /**
