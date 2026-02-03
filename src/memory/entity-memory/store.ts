@@ -10,21 +10,6 @@ import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import lockfile from "proper-lockfile";
-import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { resolveAgentDir } from "../../agents/agent-scope.js";
-import { resolveUserPath } from "../../utils.js";
-import { requireNodeSqlite } from "../sqlite.js";
-import {
-  ENTITY_TABLE,
-  RELATIONS_TABLE,
-  LOCKS_TABLE,
-  ACCESS_LOG_TABLE,
-  ENTITY_FTS_TABLE,
-  ENTITY_VEC_TABLE,
-  ensureEntityMemorySchema,
-  cleanupExpiredLocks,
-  ensureEntityVectorTable,
-} from "./schema.js";
 import type {
   MemoryEntity,
   MemoryQuery,
@@ -39,6 +24,21 @@ import type {
   EntityMemoryConfig,
   DEFAULT_ENTITY_MEMORY_CONFIG,
 } from "./types.js";
+import { resolveAgentDir } from "../../agents/agent-scope.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { resolveUserPath } from "../../utils.js";
+import { requireNodeSqlite } from "../sqlite.js";
+import {
+  ENTITY_TABLE,
+  RELATIONS_TABLE,
+  LOCKS_TABLE,
+  ACCESS_LOG_TABLE,
+  ENTITY_FTS_TABLE,
+  ENTITY_VEC_TABLE,
+  ensureEntityMemorySchema,
+  cleanupExpiredLocks,
+  ensureEntityVectorTable,
+} from "./schema.js";
 
 const log = createSubsystemLogger("entity-memory");
 
@@ -155,7 +155,11 @@ export class EntityMemoryStore {
     temporal?: Partial<TemporalContext>;
     shared?: boolean;
     embedding?: number[];
-    relations?: Array<{ targetId: string; relationType: MemoryRelation["relationType"]; strength?: number }>;
+    relations?: Array<{
+      targetId: string;
+      relationType: MemoryRelation["relationType"];
+      strength?: number;
+    }>;
   }): Promise<MemoryEntity> {
     const now = Date.now();
     const id = randomUUID();
@@ -277,7 +281,9 @@ export class EntityMemoryStore {
 
     // Log access
     this.db
-      .prepare(`INSERT INTO ${ACCESS_LOG_TABLE} (entity_id, agent_id, access_type, accessed_at) VALUES (?, ?, ?, ?)`)
+      .prepare(
+        `INSERT INTO ${ACCESS_LOG_TABLE} (entity_id, agent_id, access_type, accessed_at) VALUES (?, ?, ?, ?)`,
+      )
       .run(id, this.agentId, "get", now);
 
     return this.rowToEntity(row);
@@ -286,7 +292,7 @@ export class EntityMemoryStore {
   /**
    * Update a memory entity
    */
-  update(
+  async update(
     id: string,
     updates: Partial<{
       content: string;
@@ -298,7 +304,7 @@ export class EntityMemoryStore {
       shared: boolean;
       embedding: number[];
     }>,
-  ): MemoryEntity {
+  ): Promise<MemoryEntity> {
     const existing = this.get(id);
     if (!existing) {
       throw new Error(`Memory entity not found: ${id}`);
@@ -549,7 +555,9 @@ export class EntityMemoryStore {
         relevanceScore,
         temporalScore,
         combinedScore,
-        matchedSnippet: query.query ? this.extractMatchedSnippet(entity.content, query.query) : undefined,
+        matchedSnippet: query.query
+          ? this.extractMatchedSnippet(entity.content, query.query)
+          : undefined,
       };
     });
 
@@ -634,9 +642,7 @@ export class EntityMemoryStore {
 
     // Check for conflicting locks
     const existingLocks = this.db
-      .prepare(
-        `SELECT * FROM ${LOCKS_TABLE} WHERE resource = ? AND expires_at > ?`,
-      )
+      .prepare(`SELECT * FROM ${LOCKS_TABLE} WHERE resource = ? AND expires_at > ?`)
       .all(params.resource, now) as LockRow[];
 
     if (params.lockType === "exclusive" && existingLocks.length > 0) {
@@ -683,12 +689,17 @@ export class EntityMemoryStore {
    * Get store statistics
    */
   getStats(): MemoryStoreStats {
-    const total = this.db.prepare(`SELECT COUNT(*) as count FROM ${ENTITY_TABLE}`).get() as { count: number };
+    const total = this.db.prepare(`SELECT COUNT(*) as count FROM ${ENTITY_TABLE}`).get() as {
+      count: number;
+    };
 
     const byTypeRows = this.db
       .prepare(`SELECT type, COUNT(*) as count FROM ${ENTITY_TABLE} GROUP BY type`)
       .all() as Array<{ type: EntityType; count: number }>;
-    const byType = Object.fromEntries(byTypeRows.map((r) => [r.type, r.count])) as Record<EntityType, number>;
+    const byType = Object.fromEntries(byTypeRows.map((r) => [r.type, r.count])) as Record<
+      EntityType,
+      number
+    >;
 
     const byImportanceRows = this.db
       .prepare(`SELECT importance, COUNT(*) as count FROM ${ENTITY_TABLE} GROUP BY importance`)
@@ -768,7 +779,9 @@ export class EntityMemoryStore {
     // Normalize text score (BM25 returns negative values where more negative = better match)
     const normalizedTextScore = textScore > 0 ? 1 / (1 + textScore) : 0.5;
 
-    return (importanceWeight * 0.3 + confidenceWeight * 0.3 + normalizedTextScore * 0.4) * decayFactor;
+    return (
+      (importanceWeight * 0.3 + confidenceWeight * 0.3 + normalizedTextScore * 0.4) * decayFactor
+    );
   }
 
   private calculateTemporalScore(entity: MemoryEntity, now: number): number {
