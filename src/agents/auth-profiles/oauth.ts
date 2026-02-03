@@ -7,6 +7,11 @@ import {
 import lockfile from "proper-lockfile";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AuthProfileStore } from "./types.js";
+import {
+  isGoogleOAuthProvider,
+  refreshGoogleOAuthTokens,
+  type GoogleOAuthCredential,
+} from "../../providers/google-oauth.js";
 import { refreshQwenPortalCredentials } from "../../providers/qwen-portal-oauth.js";
 import { refreshChutesTokens } from "../chutes-oauth.js";
 import { AUTH_STORE_LOCK_OPTIONS, log } from "./constants.js";
@@ -76,13 +81,24 @@ async function refreshOAuthTokenWithLock(params: {
               const newCredentials = await refreshQwenPortalCredentials(cred);
               return { apiKey: newCredentials.access, newCredentials };
             })()
-          : await (async () => {
-              const oauthProvider = resolveOAuthProvider(cred.provider);
-              if (!oauthProvider) {
-                return null;
-              }
-              return await getOAuthApiKey(oauthProvider, oauthCreds);
-            })();
+          : isGoogleOAuthProvider(cred.provider)
+            ? await (async () => {
+                const newCredentials = await refreshGoogleOAuthTokens({
+                  credential: cred as GoogleOAuthCredential,
+                  provider: cred.provider,
+                });
+                return {
+                  apiKey: buildOAuthApiKey(cred.provider, newCredentials),
+                  newCredentials,
+                };
+              })()
+            : await (async () => {
+                const oauthProvider = resolveOAuthProvider(cred.provider);
+                if (!oauthProvider) {
+                  return null;
+                }
+                return await getOAuthApiKey(oauthProvider, oauthCreds);
+              })();
     if (!result) {
       return null;
     }
