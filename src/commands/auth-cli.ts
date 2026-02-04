@@ -17,7 +17,7 @@ export function registerAuthCli(program: Command) {
         process.env.OPENCLAW_FORCE_MANUAL_AUTH = "1";
       }
 
-      const config = await loadConfig();
+      const config = loadConfig();
       const prompter = createClackPrompter();
       const runtime = defaultRuntime;
 
@@ -42,8 +42,9 @@ export function registerAuthCli(program: Command) {
         );
 
         await prompter.outro("Authentication successful!");
-      } catch (err: any) {
-        runtime.error(`Auth failed: ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        runtime.error(`Auth failed: ${message}`);
         process.exit(1);
       }
     });
@@ -53,7 +54,7 @@ export function registerAuthCli(program: Command) {
     .description("Authenticate with Anthropic (via claude-cli)")
     .action(async () => {
       const { applyAuthChoiceAnthropic } = await import("./auth-choice.apply.anthropic.js");
-      const config = await loadConfig();
+      const config = loadConfig();
       const prompter = createClackPrompter();
       const runtime = defaultRuntime;
 
@@ -69,8 +70,9 @@ export function registerAuthCli(program: Command) {
         });
 
         await prompter.outro("Authentication successful!");
-      } catch (err: any) {
-        runtime.error(`Auth failed: ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        runtime.error(`Auth failed: ${message}`);
         process.exit(1);
       }
     });

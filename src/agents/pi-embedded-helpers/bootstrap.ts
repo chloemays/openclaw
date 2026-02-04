@@ -11,7 +11,7 @@ type ContentBlockWithSignature = {
   [key: string]: unknown;
 };
 
-type ThoughtSignatureSanitizeOptions = {
+export type ThoughtSignatureSanitizeOptions = {
   allowBase64Only?: boolean;
   includeCamelCase?: boolean;
 };
@@ -43,16 +43,45 @@ function isBase64Signature(value: string): boolean {
  * Strips Claude-style thought_signature fields from content blocks.
  *
  * Gemini expects thought signatures as base64-encoded bytes, but Claude stores message ids
- * like "msg_abc123...". We only strip "msg_*" to preserve any provider-valid signatures.
+ * like "msg_abc123...". We strip non-base64 signatures (like "msg_*") when requested.
+ *
+ * Note: For Antigravity Claude, the call site skips this function via `preserveSignatures`
+ * since those providers require signatures for protocol validation.
  */
 export function stripThoughtSignatures<T>(
   content: T,
   options?: ThoughtSignatureSanitizeOptions,
 ): T {
-  // Antigravity optimization: Cloud Code Assist/Gemini providers REQUIRE the thought signature
-  // to be present in history for protocol validation (thinking blocks are signed).
-  // We disable stripping entirely to ensure these signatures are preserved.
-  return content;
+  if (!Array.isArray(content)) {
+    return content;
+  }
+  const allowBase64Only = options?.allowBase64Only ?? false;
+  const includeCamelCase = options?.includeCamelCase ?? false;
+  const shouldStripSignature = (value: unknown): boolean => {
+    if (!allowBase64Only) {
+      return typeof value === "string" && value.startsWith("msg_");
+    }
+    return typeof value !== "string" || !isBase64Signature(value);
+  };
+  return content.map((block) => {
+    if (!block || typeof block !== "object") {
+      return block;
+    }
+    const rec = block as ContentBlockWithSignature;
+    const stripSnake = shouldStripSignature(rec.thought_signature);
+    const stripCamel = includeCamelCase ? shouldStripSignature(rec.thoughtSignature) : false;
+    if (!stripSnake && !stripCamel) {
+      return block;
+    }
+    const next = { ...rec };
+    if (stripSnake) {
+      delete next.thought_signature;
+    }
+    if (stripCamel) {
+      delete next.thoughtSignature;
+    }
+    return next;
+  }) as T;
 }
 
 export const DEFAULT_BOOTSTRAP_MAX_CHARS = 20_000;
