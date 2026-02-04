@@ -206,6 +206,8 @@ export type AgentDefaultsConfig = {
     model?: string | { primary?: string; fallbacks?: string[] };
     /** Default thinking level for spawned sub-agents (e.g. "off", "low", "medium", "high"). */
     thinking?: string;
+    /** Orchestration settings for automatic retry and task verification. */
+    orchestration?: SubagentOrchestrationConfig;
   };
   /** Optional sandbox settings for non-main sessions. */
   sandbox?: {
@@ -261,4 +263,31 @@ export type AgentCompactionMemoryFlushConfig = {
   prompt?: string;
   /** System prompt appended for the memory flush turn. */
   systemPrompt?: string;
+};
+
+/**
+ * Orchestration configuration for subagent retry and verification.
+ * Enables robust task completion with automatic retry on failure.
+ */
+export type SubagentOrchestrationConfig = {
+  /** Enable automatic retry on task failure. Default: false. */
+  retryOnFailure?: boolean;
+  /** Maximum number of retry attempts before giving up. Default: 3. */
+  maxRetries?: number;
+  /** Exponential backoff multiplier for retry delays. Default: 2. */
+  backoffMultiplier?: number;
+  /** Initial delay in milliseconds before first retry. Default: 1000. */
+  initialDelayMs?: number;
+  /** Maximum delay in milliseconds between retries. Default: 60000. */
+  maxDelayMs?: number;
+  /** Enable task verification via orchestrator hook. Default: false. */
+  verifyCompletion?: boolean;
+  /** Custom verification prompt appended to verify task completion. */
+  verificationPrompt?: string;
+  /** Timeout in seconds for verification check. Default: 30. */
+  verificationTimeoutSeconds?: number;
+  /** Continue retrying even if verification fails. Default: true. */
+  retryOnVerificationFailure?: boolean;
+  /** Hook name to call for custom verification logic. */
+  verificationHook?: string;
 };

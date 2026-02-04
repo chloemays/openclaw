@@ -360,6 +360,10 @@ export async function runSubagentAnnounceFlow(params: {
   endedAt?: number;
   label?: string;
   outcome?: SubagentRunOutcome;
+  /** Number of retry attempts made (for orchestration tracking). */
+  retryCount?: number;
+  /** Result of task verification if verification was enabled. */
+  verificationResult?: "passed" | "failed" | "skipped";
 }): Promise<boolean> {
   let didAnnounce = false;
   try {
