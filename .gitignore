@@ -77,3 +77,4 @@ USER.md
 AI_AGENT_MCP.md
 .mcp-enforcement-init
 mcp-global-rules/
+.env

@@ -9,7 +9,8 @@ WorkingDirectory=/home/p4nd4pr0t0c01/Projects/openclaw
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
-Environment=PATH=/usr/bin:/usr/local/bin
+Environment=PATH=/home/p4nd4pr0t0c01/.npm-global/bin:/usr/bin:/usr/local/bin
+EnvironmentFile=/home/p4nd4pr0t0c01/Projects/openclaw/.env
 
 [Install]
 WantedBy=default.target
