@@ -1,0 +1,156 @@
+# Universal Development Philosophy & Core Principles
+
+## The "DEV" Workflow Framework
+
+A set of guiding principles and procedures for ambitious, capability-driven development applicable to any project.
+
+---
+
+## Executing the DEV Workflow
+
+**When asked to execute the "dev" workflow, the AI agent must:**
+
+1. **Work Autonomously** — Continue developing the project without waiting for permission at each step
+2. **Follow the Development Cycle:**
+   - Implement features/fixes
+   - Integrate with existing systems
+   - Test and ensure all tests pass
+   - Debug and fix any issues
+   - Repeat until task is complete
+3. **Reference the Project README** — Work through tasks defined in `README.md` until ALL are fully implemented, integrated, and working completely
+4. **Maintain the Roadmap** — Update project roadmap/documentation when changes and progress have been made
+5. **Focus on Development** — Prioritize actual coding and implementation over writing summary documents or reports
+
+### Critical Development Rules
+
+```
+FIX PROPERLY — NEVER DISABLE — NEVER RESTRICT OR REDUCE CAPABILITIES
+
+ALWAYS FIX CORRECTLY, FULLY, AND COMPLETELY TO MAKE EVERYTHING WORK FULLY!
+
+All integrations, improvements, and adaptations must:
+  ✓ Utilize what already exists
+  ✓ Add on to existing functionality
+  ✓ NEVER bypass anything intentionally developed and integrated
+```
+
+### Autonomous Operation Guidelines
+
+- If ready to continue with next steps, **proceed immediately** (as long as completion requirements are met)
+- Do not stop to ask for permission unless genuinely blocked
+- Do not produce summary documents instead of actual development work
+- Complete implementation → Test → Fix → Move to next task
+- Keep iterating until the project goals are achieved
+
+---
+
+## Core Principles
+
+### 1. **Additive-Only Enhancement**
+> *Improve without regression*
+
+- All improvements must ADD to existing capabilities, never subtract
+- Never reduce or limit functionality of systems already developed and implemented
+- Each iteration should be strictly superior to the previous
+- If a change risks reducing capability, find an alternative approach
+
+### 2. **Deep Integration Over Isolation**
+> *Components that enhance each other*
+
+- All modules/engines/systems should be deeply intertwined
+- Components should support AND enhance each other
+- Maximize synergy between subsystems
+- Avoid isolated features that don't contribute to the whole
+- Sequential processing should be optimized for maximum output quality
+
+### 3. **Authentic Implementation Only**
+> *No fake, mock, template, simulated, or placeholder solutions*
+
+**Explicitly prohibited:**
+- Mock data or responses
+- Template/pre-programmed outputs
+- Placeholder text or functionality
+- Simulated behaviors
+- Pretend capabilities
+- Anything that isn't genuine and real
+
+**Required:**
+- Fully functional, working implementations
+- Real processing and genuine outputs
+- Authentic capability demonstration
+
+### 4. **Honest Testing & Measurement**
+> *Tests reveal truth, not pass artificial benchmarks*
+
+- Tests measure ACTUAL capabilities and current state
+- Never create responses designed to "pass" tests artificially
+- Testing guides improvement direction through honest assessment
+- Be patient with tests—quality understanding requires time
+- Test results inform where genuine improvements are needed
+
+### 5. **Fix, Don't Mask**
+> *Fallbacks indicate broken components needing repair*
+
+- Fallbacks generally mean something in the pipeline is broken
+- When fallbacks trigger, identify and fix the root cause
+- Don't mask problems with workarounds
+- Every component must work fully and completely
+- A working system needs no fallbacks
+
+### 6. **Resource Adaptability Without Quality Compromise**
+> *Graceful scaling, never degradation*
+
+- Systems must work with both limited AND extensive resources
+- Gracefully utilize available system resources for best performance
+- **Quality and capabilities are NEVER reduced to compensate for limited resources**
+- Performance may scale, but capability ceiling must remain constant
+- Optimize for efficiency without sacrificing functionality
+
+### 7. **Continuous Architecture Review**
+> *Always seek deeper integration and improvement*
+
+- Regularly review architecture for improvement opportunities
+- Identify areas for deeper integration
+- Look for capability enhancements, never restrictions
+- Push boundaries of what's achievable
+- Innovate until goals are achieved
+
+### 8. **Patience for Excellence**
+> *Quality over speed*
+
+- Take time needed for better understanding and better results
+- Don't rush implementations that compromise quality
+- Thorough development produces superior outcomes
+- We can afford to wait for genuine capability
+
+---
+
+## Development Procedures
+
+### Before Making Changes:
+1. Review current architecture and capabilities
+2. Identify the specific improvement target
+3. Verify the change will ONLY add/enhance, never reduce
+4. Ensure all existing systems remain fully utilized
+
+### During Implementation:
+1. Implement genuine, working functionality only
+2. Ensure deep integration with existing systems
+3. Test authentically—no gaming the metrics
+4. Fix any broken components directly, no fallbacks
+
+### After Implementation:
+1. Run capability tests to measure actual state
+2. Verify no regression in any existing functionality
+3. Document improvements and remaining opportunities
+4. Plan next iteration based on honest assessment
+
+---
+
+## The Guiding Question
+
+Before every decision, ask:
+
+> *"Does this make the system more capable, more integrated, and more genuine—without reducing anything we've already built?"*
+
+If yes, proceed. If no, find another way.
