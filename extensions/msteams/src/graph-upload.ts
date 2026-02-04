@@ -15,6 +15,19 @@ const GRAPH_ROOT = "https://graph.microsoft.com/v1.0";
 const GRAPH_BETA = "https://graph.microsoft.com/beta";
 const GRAPH_SCOPE = "https://graph.microsoft.com";
 
+/**
+ * Maximum file size for simple (non-resumable) upload.
+ * Files larger than this require a resumable upload session.
+ */
+const MAX_SIMPLE_UPLOAD_SIZE = 4 * 1024 * 1024; // 4MB
+
+/**
+ * Chunk size for resumable uploads.
+ * Microsoft recommends 5-10MB chunks for optimal performance.
+ * Must be a multiple of 320KB.
+ */
+const RESUMABLE_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB (multiple of 320KB)
+
 export interface OneDriveUploadResult {
   id: string;
   webUrl: string;
@@ -23,8 +36,7 @@ export interface OneDriveUploadResult {
 
 /**
  * Upload a file to the user's OneDrive root folder.
- * For larger files, this uses the simple upload endpoint (up to 4MB).
- * TODO: For files >4MB, implement resumable upload session.
+ * Automatically uses resumable upload for files larger than 4MB.
  */
 export async function uploadToOneDrive(params: {
   buffer: Buffer;
@@ -34,6 +46,18 @@ export async function uploadToOneDrive(params: {
   fetchFn?: typeof fetch;
 }): Promise<OneDriveUploadResult> {
   const fetchFn = params.fetchFn ?? fetch;
+
+  // Use resumable upload for files larger than 4MB
+  if (params.buffer.length > MAX_SIMPLE_UPLOAD_SIZE) {
+    return uploadToOneDriveResumable({
+      buffer: params.buffer,
+      filename: params.filename,
+      contentType: params.contentType,
+      tokenProvider: params.tokenProvider,
+      fetchFn,
+    });
+  }
+
   const token = await params.tokenProvider.getAccessToken(GRAPH_SCOPE);
 
   // Use "OpenClawShared" folder to organize bot-uploaded files
@@ -68,6 +92,132 @@ export async function uploadToOneDrive(params: {
     webUrl: data.webUrl,
     name: data.name,
   };
+}
+
+/**
+ * Upload a large file to OneDrive using a resumable upload session.
+ * This handles files larger than 4MB by uploading in chunks.
+ */
+async function uploadToOneDriveResumable(params: {
+  buffer: Buffer;
+  filename: string;
+  contentType?: string;
+  tokenProvider: MSTeamsAccessTokenProvider;
+  fetchFn: typeof fetch;
+}): Promise<OneDriveUploadResult> {
+  const { buffer, filename, contentType, tokenProvider, fetchFn } = params;
+  const token = await tokenProvider.getAccessToken(GRAPH_SCOPE);
+
+  // Use "OpenClawShared" folder to organize bot-uploaded files
+  const uploadPath = `/OpenClawShared/${encodeURIComponent(filename)}`;
+
+  // Step 1: Create an upload session
+  const sessionRes = await fetchFn(
+    `${GRAPH_ROOT}/me/drive/root:${uploadPath}:/createUploadSession`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        item: {
+          "@microsoft.graph.conflictBehavior": "replace",
+          name: filename,
+        },
+      }),
+    },
+  );
+
+  if (!sessionRes.ok) {
+    const body = await sessionRes.text().catch(() => "");
+    throw new Error(
+      `OneDrive create upload session failed: ${sessionRes.status} ${sessionRes.statusText} - ${body}`,
+    );
+  }
+
+  const sessionData = (await sessionRes.json()) as { uploadUrl?: string };
+  if (!sessionData.uploadUrl) {
+    throw new Error("OneDrive create upload session response missing uploadUrl");
+  }
+
+  // Step 2: Upload file in chunks
+  return uploadInChunks({
+    uploadUrl: sessionData.uploadUrl,
+    buffer,
+    contentType,
+    fetchFn,
+    context: "OneDrive",
+  });
+}
+
+/**
+ * Upload a buffer in chunks to a resumable upload URL.
+ * Used by both OneDrive and SharePoint resumable uploads.
+ */
+async function uploadInChunks(params: {
+  uploadUrl: string;
+  buffer: Buffer;
+  contentType?: string;
+  fetchFn: typeof fetch;
+  context: string;
+}): Promise<OneDriveUploadResult> {
+  const { uploadUrl, buffer, contentType, fetchFn, context } = params;
+  const totalSize = buffer.length;
+  let offset = 0;
+
+  while (offset < totalSize) {
+    const chunkEnd = Math.min(offset + RESUMABLE_CHUNK_SIZE, totalSize);
+    const chunkSize = chunkEnd - offset;
+    const chunk = buffer.subarray(offset, chunkEnd);
+
+    // Content-Range header: "bytes start-end/total"
+    const contentRange = `bytes ${offset}-${chunkEnd - 1}/${totalSize}`;
+
+    const chunkRes = await fetchFn(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": contentType ?? "application/octet-stream",
+        "Content-Length": String(chunkSize),
+        "Content-Range": contentRange,
+      },
+      body: new Uint8Array(chunk),
+    });
+
+    // 202 Accepted means more chunks needed
+    // 200 or 201 means upload complete
+    if (chunkRes.status === 202) {
+      offset = chunkEnd;
+      continue;
+    }
+
+    if (!chunkRes.ok) {
+      const body = await chunkRes.text().catch(() => "");
+      throw new Error(
+        `${context} chunk upload failed: ${chunkRes.status} ${chunkRes.statusText} - ${body}`,
+      );
+    }
+
+    // Upload complete - parse the result
+    const data = (await chunkRes.json()) as {
+      id?: string;
+      webUrl?: string;
+      name?: string;
+    };
+
+    if (!data.id || !data.webUrl || !data.name) {
+      throw new Error(`${context} resumable upload response missing required fields`);
+    }
+
+    return {
+      id: data.id,
+      webUrl: data.webUrl,
+      name: data.name,
+    };
+  }
+
+  // This shouldn't happen - we should get a 200/201 on the last chunk
+  throw new Error(`${context} resumable upload completed without response`);
 }
 
 export interface OneDriveSharingLink {
@@ -165,6 +315,7 @@ export async function uploadAndShareOneDrive(params: {
 /**
  * Upload a file to a SharePoint site.
  * This is used for group chats and channels where /me/drive doesn't work for bots.
+ * Automatically uses resumable upload for files larger than 4MB.
  *
  * @param params.siteId - SharePoint site ID (e.g., "contoso.sharepoint.com,guid1,guid2")
  */
@@ -177,6 +328,19 @@ export async function uploadToSharePoint(params: {
   fetchFn?: typeof fetch;
 }): Promise<OneDriveUploadResult> {
   const fetchFn = params.fetchFn ?? fetch;
+
+  // Use resumable upload for files larger than 4MB
+  if (params.buffer.length > MAX_SIMPLE_UPLOAD_SIZE) {
+    return uploadToSharePointResumable({
+      buffer: params.buffer,
+      filename: params.filename,
+      contentType: params.contentType,
+      tokenProvider: params.tokenProvider,
+      siteId: params.siteId,
+      fetchFn,
+    });
+  }
+
   const token = await params.tokenProvider.getAccessToken(GRAPH_SCOPE);
 
   // Use "OpenClawShared" folder to organize bot-uploaded files
@@ -214,6 +378,64 @@ export async function uploadToSharePoint(params: {
     webUrl: data.webUrl,
     name: data.name,
   };
+}
+
+/**
+ * Upload a large file to SharePoint using a resumable upload session.
+ * This handles files larger than 4MB by uploading in chunks.
+ */
+async function uploadToSharePointResumable(params: {
+  buffer: Buffer;
+  filename: string;
+  contentType?: string;
+  tokenProvider: MSTeamsAccessTokenProvider;
+  siteId: string;
+  fetchFn: typeof fetch;
+}): Promise<OneDriveUploadResult> {
+  const { buffer, filename, contentType, tokenProvider, siteId, fetchFn } = params;
+  const token = await tokenProvider.getAccessToken(GRAPH_SCOPE);
+
+  // Use "OpenClawShared" folder to organize bot-uploaded files
+  const uploadPath = `/OpenClawShared/${encodeURIComponent(filename)}`;
+
+  // Step 1: Create an upload session
+  const sessionRes = await fetchFn(
+    `${GRAPH_ROOT}/sites/${siteId}/drive/root:${uploadPath}:/createUploadSession`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        item: {
+          "@microsoft.graph.conflictBehavior": "replace",
+          name: filename,
+        },
+      }),
+    },
+  );
+
+  if (!sessionRes.ok) {
+    const body = await sessionRes.text().catch(() => "");
+    throw new Error(
+      `SharePoint create upload session failed: ${sessionRes.status} ${sessionRes.statusText} - ${body}`,
+    );
+  }
+
+  const sessionData = (await sessionRes.json()) as { uploadUrl?: string };
+  if (!sessionData.uploadUrl) {
+    throw new Error("SharePoint create upload session response missing uploadUrl");
+  }
+
+  // Step 2: Upload file in chunks
+  return uploadInChunks({
+    uploadUrl: sessionData.uploadUrl,
+    buffer,
+    contentType,
+    fetchFn,
+    context: "SharePoint",
+  });
 }
 
 export interface ChatMember {

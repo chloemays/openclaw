@@ -5,7 +5,6 @@
  * Provides automatic extraction, temporal-aware retrieval, and multi-agent support.
  */
 
-import { randomUUID } from "node:crypto";
 import type { OpenClawConfig } from "../../config/config.js";
 import type {
   MemoryEntity,
@@ -13,7 +12,6 @@ import type {
   MemorySearchResult,
   MemorySource,
   EntityMemoryConfig,
-  DEFAULT_ENTITY_MEMORY_CONFIG,
   ConsolidationResult,
   MemoryStoreStats,
   EntityType,
@@ -246,7 +244,9 @@ export class EntityMemoryManager {
     sessionKey: string;
     messageId?: string;
   }): Promise<void> {
-    if (!this.config.autoExtract) return;
+    if (!this.config.autoExtract) {
+      return;
+    }
 
     const now = Date.now();
     const source: MemorySource = {
@@ -378,7 +378,9 @@ export class EntityMemoryManager {
    * Close the manager
    */
   close(): void {
-    if (this.closed) return;
+    if (this.closed) {
+      return;
+    }
     this.closed = true;
 
     if (this.sessionUnsubscribe) {
@@ -399,47 +401,27 @@ export class EntityMemoryManager {
   // Private methods
 
   private setupSessionListener(): void {
-    this.sessionUnsubscribe = onSessionTranscriptUpdate(async (update) => {
-      if (this.closed) return;
-
-      // Only process updates for this agent's sessions
-      const sessionKey = update.sessionKey;
-      if (!sessionKey?.includes(this.agentId)) return;
-
-      // Process the message
-      const message = update.message;
-      if (!message || typeof message !== "object") return;
-
-      const role = (message as { role?: string }).role;
-      const content = (message as { content?: unknown }).content;
-
-      if (role !== "user" && role !== "assistant") return;
-      if (!content) return;
-
-      // Extract text content
-      let textContent: string;
-      if (typeof content === "string") {
-        textContent = content;
-      } else if (Array.isArray(content)) {
-        textContent = content
-          .filter((block) => block?.type === "text" && typeof block.text === "string")
-          .map((block) => block.text)
-          .join("\n");
-      } else {
+    // Session transcript update only provides the file path, not individual messages.
+    // Auto-extraction from sessions requires reading and parsing JSONL transcript files,
+    // which would add significant complexity and I/O overhead.
+    // For now, auto-extraction is triggered via explicit processMessage() calls
+    // from the agent runtime or message handlers.
+    this.sessionUnsubscribe = onSessionTranscriptUpdate((update) => {
+      if (this.closed) {
         return;
       }
 
-      if (!textContent.trim()) return;
-
-      try {
-        await this.processMessage({
-          content: textContent,
-          role,
-          sessionKey,
-        });
-      } catch (err) {
-        log.warn(`Failed to process message for memory extraction: ${err}`);
+      // Check if this session file belongs to this agent
+      const sessionFile = update.sessionFile;
+      if (!sessionFile?.includes(this.agentId)) {
+        return;
       }
+
+      // Log that we received an update but won't auto-extract
+      log.debug("Session transcript updated (auto-extraction disabled)", {
+        agentId: this.agentId,
+        sessionFile,
+      });
     });
   }
 
@@ -465,15 +447,18 @@ export class EntityMemoryManager {
 
     let line = `${typeEmoji}${importance} ${entity.content}`;
 
-    // Add relevant attributes
-    if (entity.type === "person" && entity.attributes.email) {
-      line += ` (${entity.attributes.email})`;
+    // Add relevant attributes (safely convert unknown values to strings)
+    const email = entity.attributes.email;
+    if (entity.type === "person" && typeof email === "string") {
+      line += ` (${email})`;
     }
-    if (entity.type === "task" && entity.attributes.status) {
-      line += ` [${entity.attributes.status}]`;
+    const status = entity.attributes.status;
+    if (entity.type === "task" && typeof status === "string") {
+      line += ` [${status}]`;
     }
-    if (entity.type === "preference" && entity.attributes.sentiment) {
-      line += ` (${entity.attributes.sentiment})`;
+    const sentiment = entity.attributes.sentiment;
+    if (entity.type === "preference" && typeof sentiment === "string") {
+      line += ` (${sentiment})`;
     }
 
     line += ` (${age})`;
@@ -503,28 +488,167 @@ export class EntityMemoryManager {
     const hours = Math.floor(ageMs / 3600000);
     const days = Math.floor(ageMs / 86400000);
 
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 30) return `${days}d ago`;
+    if (minutes < 60) {
+      return `${minutes}m ago`;
+    }
+    if (hours < 24) {
+      return `${hours}h ago`;
+    }
+    if (days < 30) {
+      return `${days}d ago`;
+    }
     return `${Math.floor(days / 30)}mo ago`;
   }
 
+  /**
+   * Apply temporal decay to memories based on age.
+   * Updates decay_factor in the database using exponential decay.
+   * decay_factor = max(decayFloor, exp(-decayRate * ageDays))
+   */
   private async applyTemporalDecay(): Promise<number> {
-    // This would update decay_factor in the database based on age
-    // For now, return 0 as placeholder
-    return 0;
+    const { decayRatePerDay, decayFloor } = this.config;
+    const now = Date.now();
+    const msPerDay = 24 * 60 * 60 * 1000;
+
+    // Get all memories that need decay updates (those with decay_factor > decayFloor)
+    // We access the store's db through a helper method
+    const memories = await this.store.findMemoriesForDecay({
+      minDecayFactor: decayFloor + 0.001, // Only update those above floor
+      limit: 500, // Process in batches
+    });
+
+    let updated = 0;
+    for (const memory of memories) {
+      const ageDays = (now - memory.createdAt) / msPerDay;
+      // Exponential decay: decay_factor = exp(-rate * age)
+      const newDecayFactor = Math.max(decayFloor, Math.exp(-decayRatePerDay * ageDays));
+
+      // Only update if there's a meaningful change
+      if (Math.abs(memory.decayFactor - newDecayFactor) > 0.01) {
+        await this.store.updateDecayFactor(memory.id, newDecayFactor);
+        updated++;
+      }
+    }
+
+    log.debug("Applied temporal decay", { agentId: this.agentId, updated, total: memories.length });
+    return updated;
   }
 
+  /**
+   * Find and merge similar memories to reduce redundancy.
+   * Groups memories by type and content similarity, keeping the most important one.
+   */
   private async mergeSimilarMemories(): Promise<{ merged: number; processed: number }> {
-    // This would find and merge duplicate/similar memories
-    // For now, return placeholder
-    return { merged: 0, processed: 0 };
+    let merged = 0;
+    let processed = 0;
+
+    // Get memories grouped by type and content hash prefix (first 8 chars)
+    const duplicateCandidates = await this.store.findDuplicateCandidates({
+      limit: 100,
+    });
+
+    for (const group of duplicateCandidates) {
+      if (group.memories.length < 2) {
+        continue;
+      }
+
+      processed += group.memories.length;
+
+      // Sort by importance (highest first), then by confidence, then by most recent
+      const sorted = [...group.memories].toSorted((a, b) => {
+        const importanceOrder = { critical: 5, high: 4, medium: 3, low: 2, background: 1 };
+        const impDiff = (importanceOrder[b.importance] ?? 0) - (importanceOrder[a.importance] ?? 0);
+        if (impDiff !== 0) {
+          return impDiff;
+        }
+
+        const confDiff = b.confidence - a.confidence;
+        if (Math.abs(confDiff) > 0.1) {
+          return confDiff;
+        }
+
+        return b.updatedAt - a.updatedAt;
+      });
+
+      // Keep the first (best) one, merge info from others
+      const keeper = sorted[0];
+      const toMerge = sorted.slice(1);
+
+      // Merge tags and attributes from duplicates into keeper
+      const mergedTags = new Set(keeper.tags);
+      let mergedAttributes = { ...keeper.attributes };
+
+      for (const dup of toMerge) {
+        for (const tag of dup.tags) {
+          mergedTags.add(tag);
+        }
+        mergedAttributes = { ...mergedAttributes, ...dup.attributes };
+
+        // Create a "supersedes" relation before deleting
+        this.store.addRelation(keeper.id, dup.id, "supersedes", 1.0);
+
+        // Delete the duplicate
+        this.store.delete(dup.id);
+        merged++;
+      }
+
+      // Update keeper with merged data if we had duplicates
+      if (toMerge.length > 0) {
+        await this.update(keeper.id, {
+          tags: [...mergedTags],
+          attributes: mergedAttributes,
+        });
+      }
+    }
+
+    log.debug("Merged similar memories", { agentId: this.agentId, merged, processed });
+    return { merged, processed };
   }
 
+  /**
+   * Archive (delete) old, low-importance memories that haven't been accessed recently.
+   * This helps keep the database clean and performant.
+   */
   private async archiveOldMemories(): Promise<{ archived: number; processed: number }> {
-    // This would archive old, low-importance memories
-    // For now, return placeholder
-    return { archived: 0, processed: 0 };
+    const now = Date.now();
+    const msPerDay = 24 * 60 * 60 * 1000;
+
+    // Archive criteria:
+    // - Low or background importance
+    // - Not accessed in the last 60 days
+    // - Created more than 90 days ago
+    // - Decay factor at floor
+    const ageThresholdDays = 90;
+    const accessThresholdDays = 60;
+
+    const candidates = await this.store.findArchiveCandidates({
+      maxImportance: ["low", "background"],
+      createdBefore: now - ageThresholdDays * msPerDay,
+      lastAccessedBefore: now - accessThresholdDays * msPerDay,
+      maxDecayFactor: this.config.decayFloor + 0.05,
+      limit: 200,
+    });
+
+    let archived = 0;
+    for (const memory of candidates) {
+      // Log the archival to consolidation log for audit purposes
+      await this.store.logConsolidationAction({
+        entityId: memory.id,
+        action: "archive",
+        reason: "old_low_importance",
+        timestamp: now,
+      });
+
+      this.store.delete(memory.id);
+      archived++;
+    }
+
+    log.debug("Archived old memories", {
+      agentId: this.agentId,
+      archived,
+      processed: candidates.length,
+    });
+    return { archived, processed: candidates.length };
   }
 }
 
