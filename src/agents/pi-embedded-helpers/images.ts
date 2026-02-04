@@ -114,7 +114,7 @@ export async function sanitizeSessionMessagesImages(
         }
         const strippedContent = options?.preserveSignatures
           ? content // Keep signatures for Antigravity Claude
-          : stripThoughtSignatures(content, options?.sanitizeThoughtSignatures); // Strip for Gemini
+          : stripThoughtSignatures(content); // Strip for Gemini
 
         const filteredContent = strippedContent.filter((block) => {
           if (!block || typeof block !== "object") {
