@@ -151,6 +151,21 @@ export const AgentDefaultsSchema = z
           ])
           .optional(),
         thinking: z.string().optional(),
+        orchestration: z
+          .object({
+            retryOnFailure: z.boolean().optional(),
+            maxRetries: z.number().int().min(0).max(10).optional(),
+            backoffMultiplier: z.number().min(1).max(10).optional(),
+            initialDelayMs: z.number().int().min(100).max(300000).optional(),
+            maxDelayMs: z.number().int().min(1000).max(3600000).optional(),
+            verifyCompletion: z.boolean().optional(),
+            verificationPrompt: z.string().optional(),
+            verificationTimeoutSeconds: z.number().int().positive().optional(),
+            retryOnVerificationFailure: z.boolean().optional(),
+            verificationHook: z.string().optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
