@@ -1,0 +1,76 @@
+#!/bin/bash
+# MCP Post-Commit Hook - AUTO-LEARNING
+# Records to learning, remembers context, updates indexes
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MCP_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$MCP_ROOT")"
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+info() { echo -e "${BLUE}[MCP]${NC} $1"; }
+ok() { echo -e "${GREEN}[✓]${NC} $1"; }
+
+# Detect Python
+PYTHON_CMD=""
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_CMD="python"
+fi
+
+cd "$PROJECT_ROOT"
+
+if [ -z "$PYTHON_CMD" ] || [ ! -f "$MCP_ROOT/mcp.py" ]; then
+    exit 0
+fi
+
+# Get commit info
+COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null | head -1 || echo "")
+CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | head -20 | tr '\n' ',' | sed 's/,$//')
+
+# =============================================================================
+# PHASE 1: RECORD TO LEARNING SYSTEM
+# =============================================================================
+info "Recording to learning system..."
+
+$PYTHON_CMD -c "
+import sys
+sys.path.insert(0, '$MCP_ROOT/scripts')
+try:
+    from learning import record_feedback
+    record_feedback('commit', 'success', '''$COMMIT_MSG''')
+except Exception as e:
+    pass
+" 2>/dev/null || true
+
+# =============================================================================
+# PHASE 2: AUTO-REMEMBER COMMIT CONTEXT
+# =============================================================================
+info "Remembering commit context..."
+
+$PYTHON_CMD "$MCP_ROOT/mcp.py" remember "commit_$COMMIT_HASH" "$COMMIT_MSG | Files: $CHANGED_FILES" 2>/dev/null || true
+
+# Clear pending commit memory
+$PYTHON_CMD "$MCP_ROOT/mcp.py" forget "pending_commit" 2>/dev/null || true
+
+# =============================================================================
+# PHASE 3: UPDATE INDEXES (background)
+# =============================================================================
+info "Updating indexes..."
+
+# Update semantic index for changed files
+if [ -n "$CHANGED_FILES" ]; then
+    $PYTHON_CMD "$MCP_ROOT/mcp.py" index --incremental 2>/dev/null &
+fi
+
+# Update TODO index
+$PYTHON_CMD "$MCP_ROOT/mcp.py" todos --index 2>/dev/null &
+
+ok "Post-commit complete"
+
+exit 0

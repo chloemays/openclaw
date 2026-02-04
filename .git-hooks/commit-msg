@@ -1,0 +1,39 @@
+#!/bin/bash
+# MCP Commit-Msg Hook - AI Context Enhancement
+# Automatically enriches commit messages with context for AI agents
+
+COMMIT_MSG_FILE=$1
+
+# Read current message
+CURRENT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Skip if already has MCP context
+if echo "$CURRENT_MSG" | grep -q "\[MCP\]"; then
+    exit 0
+fi
+
+# Get statistics
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MCP_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$MCP_ROOT")"
+
+cd "$PROJECT_ROOT"
+
+# Count staged files
+STAGED_COUNT=$(git diff --cached --name-only | wc -l | tr -d ' ')
+PY_COUNT=$(git diff --cached --name-only | grep '\.py$' | wc -l | tr -d ' ')
+
+# Get affected modules
+MODULES=$(git diff --cached --name-only | grep '\.py$' | xargs -I {} dirname {} 2>/dev/null | sort -u | head -3 | tr '\n' ',' | sed 's/,$//')
+
+# Append context
+echo "" >> "$COMMIT_MSG_FILE"
+echo "---" >> "$COMMIT_MSG_FILE"
+echo "[MCP Context]" >> "$COMMIT_MSG_FILE"
+echo "Files: $STAGED_COUNT | Python: $PY_COUNT" >> "$COMMIT_MSG_FILE"
+if [ -n "$MODULES" ]; then
+    echo "Modules: $MODULES" >> "$COMMIT_MSG_FILE"
+fi
+echo "Verified: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$COMMIT_MSG_FILE"
+
+exit 0

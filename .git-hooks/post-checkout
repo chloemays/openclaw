@@ -1,0 +1,62 @@
+#!/bin/bash
+# MCP Post-Checkout Hook
+# Pre-warm indexes on branch switch
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MCP_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$MCP_ROOT")"
+
+# Colors
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+info() { echo -e "${BLUE}[MCP]${NC} $1"; }
+ok() { echo -e "${GREEN}[✓]${NC} $1"; }
+
+# Args: $1=prev HEAD, $2=new HEAD, $3=branch flag (1=branch, 0=file)
+PREV_HEAD=$1
+NEW_HEAD=$2
+IS_BRANCH=$3
+
+# Only run on branch checkout
+if [ "$IS_BRANCH" != "1" ]; then
+    exit 0
+fi
+
+# Detect Python
+PYTHON_CMD=""
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_CMD="python"
+fi
+
+cd "$PROJECT_ROOT"
+
+if [ -z "$PYTHON_CMD" ] || [ ! -f "$MCP_ROOT/mcp.py" ]; then
+    exit 0
+fi
+
+BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+
+info "Warming indexes for branch: $BRANCH"
+
+# =============================================================================
+# PHASE 1: QUICK INDEX UPDATE (background)
+# =============================================================================
+$PYTHON_CMD "$MCP_ROOT/mcp.py" index-all --quick 2>/dev/null &
+
+# =============================================================================
+# PHASE 2: PRE-LOAD CONTEXT
+# =============================================================================
+$PYTHON_CMD "$MCP_ROOT/mcp.py" autocontext --warm 2>/dev/null &
+
+# =============================================================================
+# PHASE 3: REMEMBER BRANCH SWITCH
+# =============================================================================
+$PYTHON_CMD "$MCP_ROOT/mcp.py" remember "current_branch" "$BRANCH" 2>/dev/null || true
+
+ok "Indexes warming in background"
+
+exit 0

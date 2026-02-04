@@ -379,6 +379,15 @@ export async function checkUpdateStatus(params: {
   includeRegistry?: boolean;
 }): Promise<UpdateCheckResult> {
   const timeoutMs = params.timeoutMs ?? 6000;
+
+  if (process.env.OPENCLAW_DISABLE_UPDATE === "1") {
+    return {
+      root: params.root ? path.resolve(params.root) : null,
+      installKind: "unknown",
+      packageManager: "unknown",
+    };
+  }
+
   const root = params.root ? path.resolve(params.root) : null;
   if (!root) {
     return {

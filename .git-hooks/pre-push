@@ -1,0 +1,159 @@
+#!/bin/bash
+# MCP Pre-Push Hook - STRICT QUALITY GATE
+# Blocks pushes that don't meet production quality standards
+# More strict than pre-commit - enforces security and architecture
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MCP_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$MCP_ROOT")"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+ok() { echo -e "${GREEN}[✓]${NC} $1"; }
+warn() { echo -e "${YELLOW}[!]${NC} $1"; }
+fail() { echo -e "${RED}[✗]${NC} $1"; }
+
+echo ""
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║     MCP PRE-PUSH QUALITY GATE                        ║"
+echo "╚══════════════════════════════════════════════════════╝"
+echo ""
+
+ERRORS=0
+
+# Detect Python
+PYTHON_CMD=""
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_CMD="python"
+fi
+
+cd "$PROJECT_ROOT"
+
+# =============================================================================
+# GATE 1: SECURITY AUDIT (BLOCKING for HIGH+)
+# =============================================================================
+info "Gate 1: Security Audit"
+
+if [ -n "$PYTHON_CMD" ] && [ -f "$MCP_ROOT/mcp.py" ]; then
+    SECURITY_OUTPUT=$($PYTHON_CMD "$MCP_ROOT/mcp.py" security . 2>&1 || true)
+    
+    if echo "$SECURITY_OUTPUT" | grep -q "CRITICAL\|HIGH"; then
+        fail "Security issues must be resolved before push"
+        echo "$SECURITY_OUTPUT" | grep -B 1 -A 3 "CRITICAL\|HIGH" | head -30
+        ERRORS=$((ERRORS + 1))
+    else
+        ok "Security audit passed"
+    fi
+fi
+
+# =============================================================================
+# GATE 2: ARCHITECTURE VALIDATION (BLOCKING)
+# =============================================================================
+info "Gate 2: Architecture Validation"
+
+if [ -n "$PYTHON_CMD" ] && [ -f "$MCP_ROOT/mcp.py" ]; then
+    ARCH_OUTPUT=$($PYTHON_CMD "$MCP_ROOT/mcp.py" architecture . 2>&1 || true)
+    
+    if echo "$ARCH_OUTPUT" | grep -q "\[ERROR\]"; then
+        fail "Architecture violations found"
+        ERRORS=$((ERRORS + 1))
+    else
+        ok "Architecture validated"
+    fi
+fi
+
+# =============================================================================
+# GATE 3: DEAD CODE CHECK (WARNING)
+# =============================================================================
+info "Gate 3: Dead Code Detection"
+
+if [ -n "$PYTHON_CMD" ] && [ -f "$MCP_ROOT/mcp.py" ]; then
+    DEAD_OUTPUT=$($PYTHON_CMD "$MCP_ROOT/mcp.py" deadcode . 2>&1 || true)
+    
+    DEAD_COUNT=$(echo "$DEAD_OUTPUT" | grep -c "unused" || echo "0")
+    if [ "$DEAD_COUNT" -gt 10 ]; then
+        warn "Found $DEAD_COUNT unused items (consider cleanup)"
+    else
+        ok "Dead code check passed"
+    fi
+fi
+
+# =============================================================================
+# GATE 4: DOC COVERAGE MINIMUM (BLOCKING if <50%)
+# =============================================================================
+info "Gate 4: Documentation Coverage"
+
+if [ -n "$PYTHON_CMD" ] && [ -f "$MCP_ROOT/mcp.py" ]; then
+    COVERAGE_OUTPUT=$($PYTHON_CMD "$MCP_ROOT/mcp.py" coverage . 2>&1 || true)
+    COVERAGE_PCT=$(echo "$COVERAGE_OUTPUT" | grep -oP 'Coverage.*?(\d+)' | grep -oP '\d+' | tail -1 || echo "100")
+    
+    if [ "$COVERAGE_PCT" -lt 50 ]; then
+        fail "Documentation coverage ${COVERAGE_PCT}% < 50% minimum"
+        ERRORS=$((ERRORS + 1))
+    else
+        ok "Doc coverage: ${COVERAGE_PCT}%"
+    fi
+fi
+
+# =============================================================================
+# GATE 5: DEPENDENCY CHECK (WARNING for circular)
+# =============================================================================
+info "Gate 5: Dependency Analysis"
+
+if [ -n "$PYTHON_CMD" ] && [ -f "$MCP_ROOT/mcp.py" ]; then
+    DEPS_OUTPUT=$($PYTHON_CMD "$MCP_ROOT/mcp.py" deps . 2>&1 || true)
+    
+    if echo "$DEPS_OUTPUT" | grep -q "Circular"; then
+        warn "Circular dependencies detected"
+    else
+        ok "Dependencies validated"
+    fi
+fi
+
+# =============================================================================
+# GATE 6: GENERATE CONTEXT SUMMARY FOR AI
+# =============================================================================
+info "Gate 6: AI Context Generation"
+
+if [ -n "$PYTHON_CMD" ] && [ -f "$MCP_ROOT/mcp.py" ]; then
+    # Generate codebase summary for AI agents
+    SUMMARY_FILE="$MCP_ROOT/CODEBASE_SUMMARY.md"
+    $PYTHON_CMD "$MCP_ROOT/mcp.py" summarize . --output "$SUMMARY_FILE" 2>/dev/null || true
+    ok "AI context summary generated"
+fi
+
+# =============================================================================
+# FINAL VERDICT
+# =============================================================================
+echo ""
+if [ "$ERRORS" -gt 0 ]; then
+    echo "╔══════════════════════════════════════════════════════╗"
+    echo "║     ✗ PUSH BLOCKED - $ERRORS error(s)                        ║"
+    echo "╚══════════════════════════════════════════════════════╝"
+    echo ""
+    fail "Resolve issues before pushing to remote."
+    echo ""
+    echo "Run these commands to see details:"
+    echo "  python mcp.py security ."
+    echo "  python mcp.py architecture ."
+    echo "  python mcp.py coverage ."
+    echo ""
+    exit 1
+else
+    echo "╔══════════════════════════════════════════════════════╗"
+    echo "║     ✓ PUSH APPROVED                                  ║"
+    echo "╚══════════════════════════════════════════════════════╝"
+    echo ""
+    ok "All quality gates passed!"
+    exit 0
+fi

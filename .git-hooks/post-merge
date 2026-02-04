@@ -1,0 +1,43 @@
+#!/bin/bash
+# MCP Post-Merge Hook
+# Re-index after git pull
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MCP_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$MCP_ROOT")"
+
+# Colors
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+info() { echo -e "${BLUE}[MCP]${NC} $1"; }
+ok() { echo -e "${GREEN}[✓]${NC} $1"; }
+
+# Detect Python
+PYTHON_CMD=""
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_CMD="python"
+fi
+
+cd "$PROJECT_ROOT"
+
+if [ -n "$PYTHON_CMD" ] && [ -f "$MCP_ROOT/mcp.py" ]; then
+    info "Updating indexes after pull..."
+    
+    # Get changed files since merge
+    CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | head -50)
+    
+    if [ -n "$CHANGED" ]; then
+        # Quick reindex (semantic + todos only)
+        $PYTHON_CMD "$MCP_ROOT/mcp.py" index-all --quick 2>/dev/null &
+        ok "Index update started in background"
+        
+        # Update git index for new commits
+        $PYTHON_CMD "$MCP_ROOT/mcp.py" git-history --index --since="HEAD@{1}" 2>/dev/null &
+    fi
+fi
+
+exit 0

@@ -5,6 +5,10 @@ export function isRemoteEnvironment(): boolean {
     return true;
   }
 
+  if (process.env.OPENCLAW_FORCE_MANUAL_AUTH === "1") {
+    return true;
+  }
+
   if (process.env.REMOTE_CONTAINERS || process.env.CODESPACES) {
     return true;
   }

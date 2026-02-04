@@ -292,15 +292,21 @@ export function resolveEnvApiKey(provider: string): EnvApiKeyResult | null {
     return pick("GOOGLE_GEMINI_CLI_OAUTH_TOKEN") ?? pick("GEMINI_CLI_OAUTH_TOKEN");
   }
 
+  if (normalized === "google") {
+    // Falls back to Antigravity OAuth if running as an Antigravity Agent
+    if (process.env.ANTIGRAVITY_AGENT) {
+      const oauth = pick("GOOGLE_ANTIGRAVITY_OAUTH_TOKEN") ?? pick("ANTIGRAVITY_OAUTH_TOKEN");
+      if (oauth) {
+        return oauth;
+      }
+    }
+    return pick("GEMINI_API_KEY") ?? pick("GOOGLE_API_KEY");
+  }
+
   const envMap: Record<string, string> = {
     openai: "OPENAI_API_KEY",
-    google: "GEMINI_API_KEY",
     groq: "GROQ_API_KEY",
     deepgram: "DEEPGRAM_API_KEY",
-    cerebras: "CEREBRAS_API_KEY",
-    xai: "XAI_API_KEY",
-    openrouter: "OPENROUTER_API_KEY",
-    "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
     moonshot: "MOONSHOT_API_KEY",
     minimax: "MINIMAX_API_KEY",
     xiaomi: "XIAOMI_API_KEY",
