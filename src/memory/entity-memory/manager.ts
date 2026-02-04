@@ -5,7 +5,6 @@
  * Provides automatic extraction, temporal-aware retrieval, and multi-agent support.
  */
 
-import { randomUUID } from "node:crypto";
 import type { OpenClawConfig } from "../../config/config.js";
 import type {
   MemoryEntity,
@@ -13,7 +12,6 @@ import type {
   MemorySearchResult,
   MemorySource,
   EntityMemoryConfig,
-  DEFAULT_ENTITY_MEMORY_CONFIG,
   ConsolidationResult,
   MemoryStoreStats,
   EntityType,
@@ -246,7 +244,9 @@ export class EntityMemoryManager {
     sessionKey: string;
     messageId?: string;
   }): Promise<void> {
-    if (!this.config.autoExtract) return;
+    if (!this.config.autoExtract) {
+      return;
+    }
 
     const now = Date.now();
     const source: MemorySource = {
@@ -378,7 +378,9 @@ export class EntityMemoryManager {
    * Close the manager
    */
   close(): void {
-    if (this.closed) return;
+    if (this.closed) {
+      return;
+    }
     this.closed = true;
 
     if (this.sessionUnsubscribe) {
@@ -399,47 +401,27 @@ export class EntityMemoryManager {
   // Private methods
 
   private setupSessionListener(): void {
-    this.sessionUnsubscribe = onSessionTranscriptUpdate(async (update) => {
-      if (this.closed) return;
-
-      // Only process updates for this agent's sessions
-      const sessionKey = update.sessionKey;
-      if (!sessionKey?.includes(this.agentId)) return;
-
-      // Process the message
-      const message = update.message;
-      if (!message || typeof message !== "object") return;
-
-      const role = (message as { role?: string }).role;
-      const content = (message as { content?: unknown }).content;
-
-      if (role !== "user" && role !== "assistant") return;
-      if (!content) return;
-
-      // Extract text content
-      let textContent: string;
-      if (typeof content === "string") {
-        textContent = content;
-      } else if (Array.isArray(content)) {
-        textContent = content
-          .filter((block) => block?.type === "text" && typeof block.text === "string")
-          .map((block) => block.text)
-          .join("\n");
-      } else {
+    // Session transcript update only provides the file path, not individual messages.
+    // Auto-extraction from sessions requires reading and parsing JSONL transcript files,
+    // which would add significant complexity and I/O overhead.
+    // For now, auto-extraction is triggered via explicit processMessage() calls
+    // from the agent runtime or message handlers.
+    this.sessionUnsubscribe = onSessionTranscriptUpdate((update) => {
+      if (this.closed) {
         return;
       }
 
-      if (!textContent.trim()) return;
-
-      try {
-        await this.processMessage({
-          content: textContent,
-          role,
-          sessionKey,
-        });
-      } catch (err) {
-        log.warn(`Failed to process message for memory extraction: ${err}`);
+      // Check if this session file belongs to this agent
+      const sessionFile = update.sessionFile;
+      if (!sessionFile?.includes(this.agentId)) {
+        return;
       }
+
+      // Log that we received an update but won't auto-extract
+      log.debug("Session transcript updated (auto-extraction disabled)", {
+        agentId: this.agentId,
+        sessionFile,
+      });
     });
   }
 
@@ -465,15 +447,18 @@ export class EntityMemoryManager {
 
     let line = `${typeEmoji}${importance} ${entity.content}`;
 
-    // Add relevant attributes
-    if (entity.type === "person" && entity.attributes.email) {
-      line += ` (${entity.attributes.email})`;
+    // Add relevant attributes (safely convert unknown values to strings)
+    const email = entity.attributes.email;
+    if (entity.type === "person" && typeof email === "string") {
+      line += ` (${email})`;
     }
-    if (entity.type === "task" && entity.attributes.status) {
-      line += ` [${entity.attributes.status}]`;
+    const status = entity.attributes.status;
+    if (entity.type === "task" && typeof status === "string") {
+      line += ` [${status}]`;
     }
-    if (entity.type === "preference" && entity.attributes.sentiment) {
-      line += ` (${entity.attributes.sentiment})`;
+    const sentiment = entity.attributes.sentiment;
+    if (entity.type === "preference" && typeof sentiment === "string") {
+      line += ` (${sentiment})`;
     }
 
     line += ` (${age})`;
@@ -503,9 +488,15 @@ export class EntityMemoryManager {
     const hours = Math.floor(ageMs / 3600000);
     const days = Math.floor(ageMs / 86400000);
 
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 30) return `${days}d ago`;
+    if (minutes < 60) {
+      return `${minutes}m ago`;
+    }
+    if (hours < 24) {
+      return `${hours}h ago`;
+    }
+    if (days < 30) {
+      return `${days}d ago`;
+    }
     return `${Math.floor(days / 30)}mo ago`;
   }
 
@@ -557,18 +548,24 @@ export class EntityMemoryManager {
     });
 
     for (const group of duplicateCandidates) {
-      if (group.memories.length < 2) continue;
+      if (group.memories.length < 2) {
+        continue;
+      }
 
       processed += group.memories.length;
 
       // Sort by importance (highest first), then by confidence, then by most recent
-      const sorted = [...group.memories].sort((a, b) => {
+      const sorted = [...group.memories].toSorted((a, b) => {
         const importanceOrder = { critical: 5, high: 4, medium: 3, low: 2, background: 1 };
         const impDiff = (importanceOrder[b.importance] ?? 0) - (importanceOrder[a.importance] ?? 0);
-        if (impDiff !== 0) return impDiff;
+        if (impDiff !== 0) {
+          return impDiff;
+        }
 
         const confDiff = b.confidence - a.confidence;
-        if (Math.abs(confDiff) > 0.1) return confDiff;
+        if (Math.abs(confDiff) > 0.1) {
+          return confDiff;
+        }
 
         return b.updatedAt - a.updatedAt;
       });

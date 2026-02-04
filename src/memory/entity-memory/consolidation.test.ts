@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type { ImportanceLevel, EntityType, MemorySource } from "./types.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { MemorySource } from "./types.js";
 import { EntityMemoryManager } from "./manager.js";
 import { EntityMemoryStore } from "./store.js";
 
@@ -112,7 +112,7 @@ describe("EntityMemoryStore consolidation helpers", () => {
     });
 
     it("includes importance and confidence in results", async () => {
-      const mem1 = await store.store({
+      await store.store({
         type: "fact",
         content: "Duplicate content for testing",
         importance: "high",
@@ -121,7 +121,7 @@ describe("EntityMemoryStore consolidation helpers", () => {
       });
 
       // Force a duplicate by using same content
-      const mem2 = await store.store({
+      await store.store({
         type: "preference", // Different type to avoid dedup
         content: "Duplicate content for testing",
         importance: "low",
@@ -171,7 +171,6 @@ describe("EntityMemoryStore consolidation helpers", () => {
 
     it("excludes high-importance memories", async () => {
       const now = Date.now();
-      const msPerDay = 24 * 60 * 60 * 1000;
 
       const memory = await store.store({
         type: "fact",
@@ -265,7 +264,7 @@ describe("EntityMemoryManager consolidation", () => {
 
     it("applies temporal decay to memories", async () => {
       // Store a memory
-      const memory = await manager.remember({
+      await manager.remember({
         type: "fact",
         content: "Fact that will decay",
         importance: "medium",

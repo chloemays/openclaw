@@ -292,7 +292,7 @@ export function ensureEntityVectorTable(params: { db: DatabaseSync; dimensions: 
  * Drop and recreate vector table (for dimension changes)
  */
 export function recreateEntityVectorTable(params: { db: DatabaseSync; dimensions: number }): void {
-  const { db, dimensions } = params;
+  const { db } = params;
 
   try {
     db.exec(`DROP TABLE IF EXISTS ${ENTITY_VEC_TABLE}`);
@@ -309,7 +309,7 @@ export function recreateEntityVectorTable(params: { db: DatabaseSync; dimensions
 export function cleanupExpiredLocks(db: DatabaseSync): number {
   const now = Date.now();
   const result = db.prepare(`DELETE FROM ${LOCKS_TABLE} WHERE expires_at < ?`).run(now);
-  return result.changes;
+  return Number(result.changes);
 }
 
 /**
@@ -318,5 +318,5 @@ export function cleanupExpiredLocks(db: DatabaseSync): number {
 export function cleanupOldAccessLogs(db: DatabaseSync, retentionDays: number = 30): number {
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   const result = db.prepare(`DELETE FROM ${ACCESS_LOG_TABLE} WHERE accessed_at < ?`).run(cutoff);
-  return result.changes;
+  return Number(result.changes);
 }

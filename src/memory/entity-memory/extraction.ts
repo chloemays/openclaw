@@ -6,13 +6,7 @@
  */
 
 import type { EntityMemoryStore } from "./store.js";
-import type {
-  ExtractedFacts,
-  EntityType,
-  ImportanceLevel,
-  DateReference,
-  MemorySource,
-} from "./types.js";
+import type { ExtractedFacts, ImportanceLevel, DateReference, MemorySource } from "./types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 
 const log = createSubsystemLogger("entity-memory:extraction");
@@ -208,19 +202,27 @@ function extractPeople(
       }
     }
 
-    if (PATTERNS.commonWords.test(name)) continue;
-    if (PATTERNS.pronouns.test(name)) continue;
+    if (PATTERNS.commonWords.test(name)) {
+      continue;
+    }
+    if (PATTERNS.pronouns.test(name)) {
+      continue;
+    }
 
     // Check if it looks like a name
     const firstName = name.split(" ")[0].toLowerCase();
     const isLikelyName = COMMON_FIRST_NAMES.has(firstName) || name.split(" ").length >= 2;
 
-    if (!isLikelyName) continue;
-    if (seen.has(lower)) continue;
+    if (!isLikelyName) {
+      continue;
+    }
+    if (seen.has(lower)) {
+      continue;
+    }
     seen.add(lower);
 
     // Extract context around the name
-    const index = match.index!;
+    const index = match.index;
     const contextStart = Math.max(0, index - 50);
     const contextEnd = Math.min(content.length, index + name.length + 50);
     const context = content.slice(contextStart, contextEnd).trim();
@@ -271,7 +273,9 @@ function extractTasks(
   const sentences = content.split(/[.!?]+/);
   for (const sentence of sentences) {
     const trimmed = sentence.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      continue;
+    }
 
     // Reset lastIndex to avoid global regex state issues
     PATTERNS.taskIndicator.lastIndex = 0;
@@ -284,7 +288,9 @@ function extractTasks(
         .replace(/^(?:remind\s+me\s+to|don't\s+forget\s+to|make\s+sure\s+to|remember\s+to)\s+/i, "")
         .trim();
 
-      if (description.length < 5) continue;
+      if (description.length < 5) {
+        continue;
+      }
 
       // Try to extract due date
       const dueDate = extractDateFromText(trimmed, timestamp);
@@ -328,7 +334,9 @@ function extractPreferences(content: string): Array<{
   const sentences = content.split(/[.!?]+/);
   for (const sentence of sentences) {
     const trimmed = sentence.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      continue;
+    }
 
     let sentiment: "positive" | "negative" | "neutral" = "neutral";
     let strength = 0.5;
@@ -353,7 +361,9 @@ function extractPreferences(content: string): Array<{
       .replace(/^(?:that|when|how|the|a|an)\s+/i, "")
       .trim();
 
-    if (subject.length < 3 || subject.length > 100) continue;
+    if (subject.length < 3 || subject.length > 100) {
+      continue;
+    }
 
     preferences.push({
       subject,
@@ -390,7 +400,9 @@ function extractDecisions(
   const sentences = content.split(/[.!?]+/);
   for (const sentence of sentences) {
     const trimmed = sentence.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      continue;
+    }
 
     // Reset lastIndex to avoid global regex state issues
     PATTERNS.decisionIndicator.lastIndex = 0;
@@ -400,7 +412,9 @@ function extractDecisions(
         .replace(/^(?:that|to)\s+/i, "")
         .trim();
 
-      if (decision.length < 5) continue;
+      if (decision.length < 5) {
+        continue;
+      }
 
       decisions.push({
         decision,
@@ -442,17 +456,21 @@ function extractEvents(
 
   for (const match of [...absoluteDates, ...relativeDates]) {
     const dateText = match[0];
-    const index = match.index!;
+    const index = match.index;
 
     // Extract sentence containing the date
     const sentenceStart = content.lastIndexOf(".", index - 1) + 1;
     const sentenceEnd = content.indexOf(".", index) + 1 || content.length;
     const sentence = content.slice(sentenceStart, sentenceEnd).trim();
 
-    if (sentence.length < 10) continue;
+    if (sentence.length < 10) {
+      continue;
+    }
 
     const dateRef = parseDate(dateText, timestamp);
-    if (!dateRef) continue;
+    if (!dateRef) {
+      continue;
+    }
 
     // Extract location if present
     const locationMatch = sentence.match(PATTERNS.location);
@@ -504,7 +522,9 @@ function extractGeneralFacts(
   const sentences = content.split(/[.!?]+/);
   for (const sentence of sentences) {
     const trimmed = sentence.trim();
-    if (!trimmed || trimmed.length < 15) continue;
+    if (!trimmed || trimmed.length < 15) {
+      continue;
+    }
 
     // Skip questions
     if (
@@ -523,7 +543,9 @@ function extractGeneralFacts(
       }
     }
 
-    if (!isFactual) continue;
+    if (!isFactual) {
+      continue;
+    }
 
     // Calculate confidence based on language certainty markers
     let confidence = 0.7;
@@ -556,14 +578,18 @@ function extractDateFromText(text: string, baseTimestamp: number): DateReference
   const absoluteMatch = text.match(PATTERNS.dateAbsolute);
   if (absoluteMatch) {
     const parsed = parseDate(absoluteMatch[0], baseTimestamp);
-    if (parsed) return parsed;
+    if (parsed) {
+      return parsed;
+    }
   }
 
   // Try relative dates
   const relativeMatch = text.match(PATTERNS.dateRelative);
   if (relativeMatch) {
     const parsed = parseDate(relativeMatch[0], baseTimestamp);
-    if (parsed) return parsed;
+    if (parsed) {
+      return parsed;
+    }
   }
 
   return null;
@@ -613,9 +639,13 @@ function parseDate(dateStr: string, baseTimestamp: number): DateReference | null
   if (nextMatch) {
     const unit = nextMatch[1];
     const future = new Date(base);
-    if (unit === "week") future.setDate(future.getDate() + 7);
-    else if (unit === "month") future.setMonth(future.getMonth() + 1);
-    else if (unit === "year") future.setFullYear(future.getFullYear() + 1);
+    if (unit === "week") {
+      future.setDate(future.getDate() + 7);
+    } else if (unit === "month") {
+      future.setMonth(future.getMonth() + 1);
+    } else if (unit === "year") {
+      future.setFullYear(future.getFullYear() + 1);
+    }
     return {
       originalText: dateStr,
       timestamp: future.getTime(),
@@ -629,9 +659,13 @@ function parseDate(dateStr: string, baseTimestamp: number): DateReference | null
   if (lastMatch) {
     const unit = lastMatch[1];
     const past = new Date(base);
-    if (unit === "week") past.setDate(past.getDate() - 7);
-    else if (unit === "month") past.setMonth(past.getMonth() - 1);
-    else if (unit === "year") past.setFullYear(past.getFullYear() - 1);
+    if (unit === "week") {
+      past.setDate(past.getDate() - 7);
+    } else if (unit === "month") {
+      past.setMonth(past.getMonth() - 1);
+    } else if (unit === "year") {
+      past.setFullYear(past.getFullYear() - 1);
+    }
     return {
       originalText: dateStr,
       timestamp: past.getTime(),
@@ -646,10 +680,15 @@ function parseDate(dateStr: string, baseTimestamp: number): DateReference | null
     const num = parseInt(inMatch[1], 10);
     const unit = inMatch[2].replace(/s$/, "");
     const future = new Date(base);
-    if (unit === "day") future.setDate(future.getDate() + num);
-    else if (unit === "week") future.setDate(future.getDate() + num * 7);
-    else if (unit === "month") future.setMonth(future.getMonth() + num);
-    else if (unit === "year") future.setFullYear(future.getFullYear() + num);
+    if (unit === "day") {
+      future.setDate(future.getDate() + num);
+    } else if (unit === "week") {
+      future.setDate(future.getDate() + num * 7);
+    } else if (unit === "month") {
+      future.setMonth(future.getMonth() + num);
+    } else if (unit === "year") {
+      future.setFullYear(future.getFullYear() + num);
+    }
     return {
       originalText: dateStr,
       timestamp: future.getTime(),
@@ -664,10 +703,15 @@ function parseDate(dateStr: string, baseTimestamp: number): DateReference | null
     const num = parseInt(agoMatch[1], 10);
     const unit = agoMatch[2].replace(/s$/, "");
     const past = new Date(base);
-    if (unit === "day") past.setDate(past.getDate() - num);
-    else if (unit === "week") past.setDate(past.getDate() - num * 7);
-    else if (unit === "month") past.setMonth(past.getMonth() - num);
-    else if (unit === "year") past.setFullYear(past.getFullYear() - num);
+    if (unit === "day") {
+      past.setDate(past.getDate() - num);
+    } else if (unit === "week") {
+      past.setDate(past.getDate() - num * 7);
+    } else if (unit === "month") {
+      past.setMonth(past.getMonth() - num);
+    } else if (unit === "year") {
+      past.setFullYear(past.getFullYear() - num);
+    }
     return {
       originalText: dateStr,
       timestamp: past.getTime(),
@@ -701,7 +745,7 @@ export async function processAndStoreFacts(params: {
   source: MemorySource;
   agentId: string;
 }): Promise<void> {
-  const { store, facts, source, agentId } = params;
+  const { store, facts, source } = params;
 
   // Store people
   for (const person of facts.people) {

@@ -8,8 +8,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
-import lockfile from "proper-lockfile";
 import type {
   MemoryEntity,
   MemoryQuery,
@@ -21,11 +21,10 @@ import type {
   EntityType,
   ImportanceLevel,
   TemporalContext,
-  EntityMemoryConfig,
-  DEFAULT_ENTITY_MEMORY_CONFIG,
 } from "./types.js";
-import { resolveAgentDir } from "../../agents/agent-scope.js";
+import { resolveStateDir } from "../../config/paths.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { normalizeAgentId } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
 import { requireNodeSqlite } from "../sqlite.js";
 import {
@@ -42,8 +41,8 @@ import {
 
 const log = createSubsystemLogger("entity-memory");
 
-const LOCK_TIMEOUT_MS = 30_000;
-const LOCK_STALE_MS = 60_000;
+const _LOCK_TIMEOUT_MS = 30_000;
+const _LOCK_STALE_MS = 60_000;
 const DEFAULT_LOCK_DURATION_MS = 5_000;
 const MAX_QUERY_RESULTS = 100;
 const IMPORTANCE_WEIGHTS: Record<ImportanceLevel, number> = {
@@ -72,7 +71,9 @@ function embeddingToBlob(embedding: number[]): Buffer {
  * Parse embedding from JSON string
  */
 function parseEmbedding(embeddingJson: string | null): number[] | undefined {
-  if (!embeddingJson) return undefined;
+  if (!embeddingJson) {
+    return undefined;
+  }
   try {
     return JSON.parse(embeddingJson) as number[];
   } catch {
@@ -114,10 +115,16 @@ export class EntityMemoryStore {
     const { agentId } = params;
 
     // Determine database path
+    const resolveDefaultAgentDir = (id: string): string => {
+      const normalizedId = normalizeAgentId(id);
+      const root = resolveStateDir(process.env, os.homedir);
+      return path.join(root, "agents", normalizedId, "agent");
+    };
+
     const dbPath = params.dbPath
       ? resolveUserPath(params.dbPath)
       : path.join(
-          params.agentDir ?? resolveAgentDir(undefined, agentId),
+          params.agentDir ?? resolveDefaultAgentDir(agentId),
           "memory",
           "entity-memory.sqlite",
         );
@@ -247,7 +254,7 @@ export class EntityMemoryStore {
           .prepare(`INSERT INTO ${ENTITY_VEC_TABLE} (id, embedding) VALUES (?, ?)`)
           .run(entity.id, embeddingToBlob(entity.embedding));
       } catch (err) {
-        log.debug(`Failed to insert vector: ${err}`);
+        log.debug(`Failed to insert vector: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -269,7 +276,9 @@ export class EntityMemoryStore {
     const row = this.db.prepare(`SELECT * FROM ${ENTITY_TABLE} WHERE id = ?`).get(id) as
       | EntityRow
       | undefined;
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
 
     // Update access tracking
     const now = Date.now();
@@ -316,7 +325,8 @@ export class EntityMemoryStore {
       : existing.contentHash;
 
     const sets: string[] = ["updated_at = ?", "version = version + 1"];
-    const values: unknown[] = [now];
+    // Values are all valid SQL types (string, number, null) that we control
+    const values: (string | number | null)[] = [now];
 
     if (updates.content !== undefined) {
       sets.push("content = ?", "content_hash = ?");
@@ -377,7 +387,7 @@ export class EntityMemoryStore {
           .prepare(`INSERT INTO ${ENTITY_VEC_TABLE} (id, embedding) VALUES (?, ?)`)
           .run(id, embeddingToBlob(updates.embedding));
       } catch (err) {
-        log.debug(`Failed to update vector: ${err}`);
+        log.debug(`Failed to update vector: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -409,7 +419,8 @@ export class EntityMemoryStore {
     // Build WHERE clause
     // Use "e." prefix for entity table columns to avoid ambiguity in FTS join queries
     const conditions: string[] = [];
-    const params: unknown[] = [];
+    // All SQL params are valid types (string, number, null)
+    const params: (string | number | null)[] = [];
 
     // Agent ID filter (own + shared)
     if (query.includeShared !== false) {
@@ -585,14 +596,18 @@ export class EntityMemoryStore {
     const results: MemoryEntity[] = [];
 
     const explore = (id: string, depth: number) => {
-      if (depth > maxDepth) return;
+      if (depth > maxDepth) {
+        return;
+      }
 
       const relations = this.db
         .prepare(`SELECT target_id FROM ${RELATIONS_TABLE} WHERE source_id = ?`)
         .all(id) as Array<{ target_id: string }>;
 
       for (const rel of relations) {
-        if (visited.has(rel.target_id)) continue;
+        if (visited.has(rel.target_id)) {
+          continue;
+        }
         visited.add(rel.target_id);
 
         const entity = this.get(rel.target_id);
@@ -653,11 +668,15 @@ export class EntityMemoryStore {
       const hasExclusiveOrWrite = existingLocks.some(
         (l) => l.lock_type === "exclusive" || l.lock_type === "write",
       );
-      if (hasExclusiveOrWrite) return null;
+      if (hasExclusiveOrWrite) {
+        return null;
+      }
     }
     if (params.lockType === "read") {
       const hasExclusive = existingLocks.some((l) => l.lock_type === "exclusive");
-      if (hasExclusive) return null;
+      if (hasExclusive) {
+        return null;
+      }
     }
 
     // Acquire lock
@@ -908,7 +927,9 @@ export class EntityMemoryStore {
    * Close the store
    */
   close(): void {
-    if (this.closed) return;
+    if (this.closed) {
+      return;
+    }
     this.closed = true;
     this.db.close();
     log.debug("Entity memory store closed", { agentId: this.agentId });
@@ -924,7 +945,9 @@ export class EntityMemoryStore {
   }
 
   private async ensureVectorTable(dimensions: number): Promise<void> {
-    if (this.vectorDims === dimensions) return;
+    if (this.vectorDims === dimensions) {
+      return;
+    }
     ensureEntityVectorTable({ db: this.db, dimensions });
     this.vectorDims = dimensions;
   }
@@ -935,7 +958,9 @@ export class EntityMemoryStore {
       .replace(/[^\w\s]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    if (!cleaned) return null;
+    if (!cleaned) {
+      return null;
+    }
     return cleaned
       .split(" ")
       .map((term) => `"${term}"`)

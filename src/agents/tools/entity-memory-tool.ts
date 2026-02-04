@@ -6,8 +6,7 @@
  * preferences, tasks, and more.
  */
 
-import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import {
   EntityMemoryManager,
@@ -16,6 +15,13 @@ import {
   type ImportanceLevel,
   type MemorySearchResult,
 } from "../../memory/entity-memory/index.js";
+import {
+  jsonResult,
+  readStringParam,
+  readStringArrayParam,
+  readNumberParam,
+  type AnyAgentTool,
+} from "./common.js";
 
 const log = createSubsystemLogger("entity-memory-tool");
 
@@ -125,18 +131,13 @@ const UpdateInputSchema = Type.Object({
   ),
 });
 
-type RememberInput = Static<typeof RememberInputSchema>;
-type RecallInput = Static<typeof RecallInputSchema>;
-type ForgetInput = Static<typeof ForgetInputSchema>;
-type UpdateInput = Static<typeof UpdateInputSchema>;
-
 /**
  * Create the entity memory tools for an agent
  */
 export function createEntityMemoryTools(params: {
   agentId: string;
   sessionKey?: string;
-}): AgentTool[] {
+}): AnyAgentTool[] {
   const { agentId, sessionKey } = params;
 
   let managerPromise: Promise<EntityMemoryManager> | null = null;
@@ -151,23 +152,34 @@ export function createEntityMemoryTools(params: {
   return [
     // Remember tool
     {
+      label: "Entity Memory - Remember",
       name: "memory_remember",
       description:
         "Store a new memory. Use this to remember important information about people, events, preferences, tasks, decisions, and other facts for future reference.",
       parameters: RememberInputSchema,
-      execute: async (input: RememberInput): Promise<string> => {
+      execute: async (_toolCallId, rawParams) => {
+        const params = rawParams as Record<string, unknown>;
         try {
           const manager = await getManager();
 
+          const type = readStringParam(params, "type", { required: true });
+          const content = readStringParam(params, "content", { required: true });
+          const attributes = params.attributes as Record<string, unknown> | undefined;
+          const importance = readStringParam(params, "importance") as ImportanceLevel | undefined;
+          const tags = readStringArrayParam(params, "tags");
+          const relevantFrom = readNumberParam(params, "relevantFrom");
+          const relevantUntil = readNumberParam(params, "relevantUntil");
+          const shared = typeof params.shared === "boolean" ? params.shared : undefined;
+
           const entity = await manager.remember({
-            type: input.type as EntityType,
-            content: input.content,
-            attributes: input.attributes as Record<string, unknown> | undefined,
-            importance: input.importance as ImportanceLevel | undefined,
-            tags: input.tags,
-            relevantFrom: input.relevantFrom,
-            relevantUntil: input.relevantUntil,
-            shared: input.shared,
+            type: type as EntityType,
+            content,
+            attributes,
+            importance,
+            tags,
+            relevantFrom,
+            relevantUntil,
+            shared,
             source: {
               type: "user_input",
               sessionKey,
@@ -177,41 +189,53 @@ export function createEntityMemoryTools(params: {
 
           log.debug("Memory stored via tool", { id: entity.id, type: entity.type });
 
-          return JSON.stringify({
+          return jsonResult({
             success: true,
             id: entity.id,
-            message: `Remembered ${input.type}: "${input.content.slice(0, 50)}${input.content.length > 50 ? "..." : ""}"`,
+            message: `Remembered ${type}: "${content.slice(0, 50)}${content.length > 50 ? "..." : ""}"`,
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           log.error("Memory remember failed", { error: message });
-          return JSON.stringify({ success: false, error: message });
+          return jsonResult({ success: false, error: message });
         }
       },
     },
 
     // Recall tool
     {
+      label: "Entity Memory - Recall",
       name: "memory_recall",
       description:
         "Search and retrieve stored memories. Use this to find previously stored information about people, events, preferences, tasks, and other facts.",
       parameters: RecallInputSchema,
-      execute: async (input: RecallInput): Promise<string> => {
+      execute: async (_toolCallId, rawParams) => {
+        const params = rawParams as Record<string, unknown>;
         try {
           const manager = await getManager();
 
+          const query = readStringParam(params, "query");
+          const types = readStringArrayParam(params, "types") as EntityType[] | undefined;
+          const tags = readStringArrayParam(params, "tags");
+          const importance = readStringArrayParam(params, "importance") as
+            | ImportanceLevel[]
+            | undefined;
+          const relevantNow =
+            typeof params.relevantNow === "boolean" ? params.relevantNow : undefined;
+          const limit = readNumberParam(params, "limit", { integer: true });
+
           const results = await manager.recall({
-            query: input.query,
-            types: input.types as EntityType[] | undefined,
-            tags: input.tags,
-            importance: input.importance as ImportanceLevel[] | undefined,
-            relevantNow: input.relevantNow,
-            limit: input.limit,
+            query,
+            types,
+            tags,
+            importance,
+            relevantNow,
+            limit,
             sessionKey,
           });
 
           if (results.length === 0) {
-            return JSON.stringify({
+            return jsonResult({
               success: true,
               memories: [],
               message: "No memories found matching the query.",
@@ -232,7 +256,7 @@ export function createEntityMemoryTools(params: {
 
           log.debug("Memory recall via tool", { count: results.length });
 
-          return JSON.stringify({
+          return jsonResult({
             success: true,
             memories: formattedResults,
             message: `Found ${results.length} memories.`,
@@ -240,70 +264,81 @@ export function createEntityMemoryTools(params: {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           log.error("Memory recall failed", { error: message });
-          return JSON.stringify({ success: false, error: message });
+          return jsonResult({ success: false, error: message });
         }
       },
     },
 
     // Forget tool
     {
+      label: "Entity Memory - Forget",
       name: "memory_forget",
       description:
         "Delete a stored memory by its ID. Use this when a memory is no longer needed or was stored incorrectly.",
       parameters: ForgetInputSchema,
-      execute: async (input: ForgetInput): Promise<string> => {
+      execute: async (_toolCallId, rawParams) => {
+        const params = rawParams as Record<string, unknown>;
         try {
           const manager = await getManager();
-          const deleted = manager.forget(input.id);
+          const id = readStringParam(params, "id", { required: true });
+          const deleted = manager.forget(id);
 
           if (deleted) {
-            log.debug("Memory deleted via tool", { id: input.id });
-            return JSON.stringify({
+            log.debug("Memory deleted via tool", { id });
+            return jsonResult({
               success: true,
-              message: `Memory ${input.id} has been deleted.`,
+              message: `Memory ${id} has been deleted.`,
             });
           } else {
-            return JSON.stringify({
+            return jsonResult({
               success: false,
-              error: `Memory ${input.id} not found.`,
+              error: `Memory ${id} not found.`,
             });
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           log.error("Memory forget failed", { error: message });
-          return JSON.stringify({ success: false, error: message });
+          return jsonResult({ success: false, error: message });
         }
       },
     },
 
     // Update tool
     {
+      label: "Entity Memory - Update",
       name: "memory_update",
       description:
         "Update an existing memory by its ID. Use this to correct or add information to a previously stored memory.",
       parameters: UpdateInputSchema,
-      execute: async (input: UpdateInput): Promise<string> => {
+      execute: async (_toolCallId, rawParams) => {
+        const params = rawParams as Record<string, unknown>;
         try {
           const manager = await getManager();
 
-          const updated = await manager.update(input.id, {
-            content: input.content,
-            importance: input.importance as ImportanceLevel | undefined,
-            tags: input.tags,
-            shared: input.shared,
+          const id = readStringParam(params, "id", { required: true });
+          const content = readStringParam(params, "content");
+          const importance = readStringParam(params, "importance") as ImportanceLevel | undefined;
+          const tags = readStringArrayParam(params, "tags");
+          const shared = typeof params.shared === "boolean" ? params.shared : undefined;
+
+          const updated = await manager.update(id, {
+            content,
+            importance,
+            tags,
+            shared,
           });
 
-          log.debug("Memory updated via tool", { id: input.id });
+          log.debug("Memory updated via tool", { id });
 
-          return JSON.stringify({
+          return jsonResult({
             success: true,
             id: updated.id,
-            message: `Memory ${input.id} has been updated.`,
+            message: `Memory ${id} has been updated.`,
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           log.error("Memory update failed", { error: message });
-          return JSON.stringify({ success: false, error: message });
+          return jsonResult({ success: false, error: message });
         }
       },
     },
@@ -377,9 +412,17 @@ function formatAge(timestamp: number): string {
   const hours = Math.floor(ms / 3600000);
   const days = Math.floor(ms / 86400000);
 
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 30) return `${days}d ago`;
+  if (minutes < 1) {
+    return "just now";
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  if (days < 30) {
+    return `${days}d ago`;
+  }
   return `${Math.floor(days / 30)}mo ago`;
 }

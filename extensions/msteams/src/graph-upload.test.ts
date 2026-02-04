@@ -50,11 +50,9 @@ describe("graph-upload", () => {
       const { uploadToOneDrive } = await import("./graph-upload.js");
 
       const largeBuffer = Buffer.alloc(5 * 1024 * 1024); // 5MB
-      let callCount = 0;
 
       const mockFetch = vi.fn(async (url: string) => {
-        callCount++;
-        if ((url as string).includes("createUploadSession")) {
+        if (url.includes("createUploadSession")) {
           return {
             ok: true,
             json: async () => ({ uploadUrl: "https://upload.microsoft.com/session/abc" }),
@@ -96,7 +94,7 @@ describe("graph-upload", () => {
       const chunkCalls: string[] = [];
 
       const mockFetch = vi.fn(async (url: string, options?: RequestInit) => {
-        if ((url as string).includes("createUploadSession")) {
+        if (url.includes("createUploadSession")) {
           return {
             ok: true,
             json: async () => ({ uploadUrl: "https://upload.microsoft.com/session/xyz" }),
@@ -206,7 +204,7 @@ describe("graph-upload", () => {
       const largeBuffer = Buffer.alloc(5 * 1024 * 1024); // 5MB
 
       const mockFetch = vi.fn(async (url: string) => {
-        if ((url as string).includes("createUploadSession")) {
+        if (url.includes("createUploadSession")) {
           return {
             ok: true,
             json: async () => ({ uploadUrl: "https://upload.sharepoint.com/session/abc" }),
