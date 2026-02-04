@@ -47,7 +47,8 @@ All integrations, improvements, and adaptations must:
 ## Core Principles
 
 ### 1. **Additive-Only Enhancement**
-> *Improve without regression*
+
+> _Improve without regression_
 
 - All improvements must ADD to existing capabilities, never subtract
 - Never reduce or limit functionality of systems already developed and implemented
@@ -55,7 +56,8 @@ All integrations, improvements, and adaptations must:
 - If a change risks reducing capability, find an alternative approach
 
 ### 2. **Deep Integration Over Isolation**
-> *Components that enhance each other*
+
+> _Components that enhance each other_
 
 - All modules/engines/systems should be deeply intertwined
 - Components should support AND enhance each other
@@ -64,9 +66,11 @@ All integrations, improvements, and adaptations must:
 - Sequential processing should be optimized for maximum output quality
 
 ### 3. **Authentic Implementation Only**
-> *No fake, mock, template, simulated, or placeholder solutions*
+
+> _No fake, mock, template, simulated, or placeholder solutions_
 
 **Explicitly prohibited:**
+
 - Mock data or responses
 - Template/pre-programmed outputs
 - Placeholder text or functionality
@@ -75,12 +79,14 @@ All integrations, improvements, and adaptations must:
 - Anything that isn't genuine and real
 
 **Required:**
+
 - Fully functional, working implementations
 - Real processing and genuine outputs
 - Authentic capability demonstration
 
 ### 4. **Honest Testing & Measurement**
-> *Tests reveal truth, not pass artificial benchmarks*
+
+> _Tests reveal truth, not pass artificial benchmarks_
 
 - Tests measure ACTUAL capabilities and current state
 - Never create responses designed to "pass" tests artificially
@@ -89,7 +95,8 @@ All integrations, improvements, and adaptations must:
 - Test results inform where genuine improvements are needed
 
 ### 5. **Fix, Don't Mask**
-> *Fallbacks indicate broken components needing repair*
+
+> _Fallbacks indicate broken components needing repair_
 
 - Fallbacks generally mean something in the pipeline is broken
 - When fallbacks trigger, identify and fix the root cause
@@ -98,7 +105,8 @@ All integrations, improvements, and adaptations must:
 - A working system needs no fallbacks
 
 ### 6. **Resource Adaptability Without Quality Compromise**
-> *Graceful scaling, never degradation*
+
+> _Graceful scaling, never degradation_
 
 - Systems must work with both limited AND extensive resources
 - Gracefully utilize available system resources for best performance
@@ -107,7 +115,8 @@ All integrations, improvements, and adaptations must:
 - Optimize for efficiency without sacrificing functionality
 
 ### 7. **Continuous Architecture Review**
-> *Always seek deeper integration and improvement*
+
+> _Always seek deeper integration and improvement_
 
 - Regularly review architecture for improvement opportunities
 - Identify areas for deeper integration
@@ -116,7 +125,8 @@ All integrations, improvements, and adaptations must:
 - Innovate until goals are achieved
 
 ### 8. **Patience for Excellence**
-> *Quality over speed*
+
+> _Quality over speed_
 
 - Take time needed for better understanding and better results
 - Don't rush implementations that compromise quality
@@ -128,18 +138,21 @@ All integrations, improvements, and adaptations must:
 ## Development Procedures
 
 ### Before Making Changes:
+
 1. Review current architecture and capabilities
 2. Identify the specific improvement target
 3. Verify the change will ONLY add/enhance, never reduce
 4. Ensure all existing systems remain fully utilized
 
 ### During Implementation:
+
 1. Implement genuine, working functionality only
 2. Ensure deep integration with existing systems
 3. Test authentically—no gaming the metrics
 4. Fix any broken components directly, no fallbacks
 
 ### After Implementation:
+
 1. Run capability tests to measure actual state
 2. Verify no regression in any existing functionality
 3. Document improvements and remaining opportunities
@@ -151,6 +164,6 @@ All integrations, improvements, and adaptations must:
 
 Before every decision, ask:
 
-> *"Does this make the system more capable, more integrated, and more genuine—without reducing anything we've already built?"*
+> _"Does this make the system more capable, more integrated, and more genuine—without reducing anything we've already built?"_
 
 If yes, proceed. If no, find another way.
