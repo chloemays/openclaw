@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenClaw Gateway
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /home/p4nd4pr0t0c01/Projects/openclaw/scripts/run-node.mjs gateway
+WorkingDirectory=/home/p4nd4pr0t0c01/Projects/openclaw
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PATH=/usr/bin:/usr/local/bin
+
+[Install]
+WantedBy=default.target

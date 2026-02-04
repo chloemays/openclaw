@@ -71,3 +71,9 @@ USER.md
 
 # local tooling
 .serena/
+
+# Local MCP Config
+.mcp/
+AI_AGENT_MCP.md
+.mcp-enforcement-init
+mcp-global-rules/
